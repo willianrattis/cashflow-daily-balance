@@ -1,0 +1,127 @@
+# Alert rules for the CashFlow reference stack (docs/05-aspectos-transversais.md §3).
+# Expressions were verified against the real `/metrics` output of both services
+# and the RabbitMQ `rabbitmq_prometheus` plugin (`:15692/metrics`), not assumed.
+#
+# Notification routing (Alertmanager) is out of scope here: these rules only make a problem
+# visible at http://localhost:9090/alerts (pending/firing), they do not page anyone.
+groups:
+  - name: cashflow
+    rules:
+      - alert: OutboxStale
+        expr: outbox_oldest_age_seconds > 60
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LaunchService's Outbox has a message older than 60s"
+          description: >-
+            outbox_oldest_age_seconds has been above 60 seconds for more than 2 minutes.
+            The broker is likely unreachable or rejecting publishes; see docs/07-runbooks.md
+            #1 (Broker fora do ar).
+
+      - alert: ProjectionLagHigh
+        expr: histogram_quantile(0.95, sum(rate(consumer_lag_seconds_bucket[5m])) by (le)) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Consolidation projection lag p95 above 5s (NFR-005)"
+          description: >-
+            p95 of consumer_lag_seconds (applied_at - recorded_at) has been above 5 seconds
+            for more than 5 minutes. See docs/07-runbooks.md #2 (ConsolidationService parado
+            ou com backlog crescendo).
+
+      - alert: DeadLetterQueueNotEmpty
+        expr: rabbitmq_queue_messages{queue="consolidation.launch-recorded.v1.dlq"} > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Messages sitting in the Dead Letter Queue"
+          description: >-
+            rabbitmq_queue_messages for consolidation.launch-recorded.v1.dlq has been above
+            zero for more than 1 minute. Inspect before replaying — see docs/07-runbooks.md
+            #4 (DLQ não vazia).
+
+      - alert: ConsolidationBacklogGrowing
+        expr: deriv(rabbitmq_queue_messages{queue="consolidation.launch-recorded.v1"}[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Main consumer queue depth is trending up"
+          description: >-
+            rabbitmq_queue_messages for consolidation.launch-recorded.v1 has been growing for
+            more than 5 minutes — the consumer is likely stopped or falling behind. See
+            docs/07-runbooks.md #2 (ConsolidationService parado ou com backlog crescendo).
+
+      - alert: LaunchServiceErrors
+        expr: rate(launch_requests_total{outcome="error"}[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LaunchService is returning unexpected errors"
+          description: >-
+            The rate of launch_requests_total with outcome="error" has been above zero for
+            more than 5 minutes for operation={{ $labels.operation }} — this is the
+            `_ => "error"` outcome (anything that is not a validation/conflict failure), not
+            business-rule rejections. Check launchservice logs for the correlationId of a
+            recent failure.
+
+      - alert: TargetDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Prometheus target {{ $labels.job }} is down"
+          description: >-
+            up has been 0 for job={{ $labels.job }} for more than 1 minute — the scrape
+            target itself is unreachable (process down, network partition, or wrong
+            address), independent of what its own health checks would say.
+
+      - alert: ConsolidationServiceErrors
+        expr: |
+          (
+            sum(rate(consolidation_requests_total{outcome="error"}[5m]))
+            /
+            sum(rate(consolidation_requests_total[5m]))
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ConsolidationService error ratio above the NFR-C loss budget (5%)"
+          description: >-
+            The share of consolidation_requests_total with outcome="error" has been above
+            5% for more than 5 minutes — the same "perda" reading NFR-C applies to the
+            Consolidado (A-004), mirrored here as an error-ratio alert instead of
+            LaunchServiceErrors' absolute rate because the Consolidado's accepted loss
+            budget is a percentage, not zero. Check consolidationservice logs for the
+            correlationId of a recent failure; see docs/07-runbooks.md #7 (Taxa de erro do
+            Consolidado ou latência de API acima do orçamento).
+
+      - alert: LaunchLatencyHigh
+        expr: histogram_quantile(0.95, sum(rate(launch_request_duration_ms_milliseconds_bucket[5m])) by (le)) > 300
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LaunchService p95 latency above the NFR-013 target (300ms)"
+          description: >-
+            p95 of launch_request_duration_ms has been above 300ms for more than 10
+            minutes — NFR-013's target for the write path. See docs/07-runbooks.md #7
+            (Taxa de erro do Consolidado ou latência de API acima do orçamento).
+
+      - alert: ConsolidationLatencyHigh
+        expr: histogram_quantile(0.95, sum(rate(consolidation_query_duration_ms_milliseconds_bucket[5m])) by (le)) > 500
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ConsolidationService p95 latency above the NFR-013 target (500ms)"
+          description: >-
+            p95 of consolidation_query_duration_ms has been above 500ms for more than 10
+            minutes — NFR-013's target for the query path. See docs/07-runbooks.md #7
+            (Taxa de erro do Consolidado ou latência de API acima do orçamento).

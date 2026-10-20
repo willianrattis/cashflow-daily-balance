@@ -1,0 +1,249 @@
+{
+  "title": "CashFlow — visão operacional",
+  "uid": "cashflow-operacional",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "10s",
+  "time": { "from": "now-30m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "LaunchService",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "id": 2,
+      "title": "Request rate by outcome",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "description": "Requisições por segundo ao POST /launches, separadas pelo resultado (outcome): success (201, ou 200 quando repete a mesma Idempotency-Key), validation (400, corpo ou cabeçalho inválido), conflict (409, mesma Idempotency-Key com conteúdo diferente), error (500, falha inesperada) e rate_limited (429, o chamador passou do limite de requisições por segundo, docs/05 §1). O smoke.sh padrão nunca provoca um 429.",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 1 },
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "targets": [
+        { "datasource": "Prometheus", "expr": "sum by (outcome) (rate(launch_requests_total[1m]))", "legendFormat": "{{outcome}}" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "5xx rate",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "description": "Requisições por segundo do LaunchService que terminaram em erro 500 (launch_requests_total{outcome=\"error\"}): falhas inesperadas, não erros de validação (400) nem de conflito (409). O smoke.sh padrão não provoca nenhuma, então o esperado é 0, a não ser que tenha ocorrido um erro 500 de verdade. Fica vermelho a partir de 0,1 por segundo; o alerta LaunchServiceErrors dispara se houver erros durante 5 minutos.",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 1 },
+      "fieldConfig": {
+        "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 0.1 }] } }
+      },
+      "targets": [
+        { "datasource": "Prometheus", "expr": "sum(rate(launch_requests_total{outcome=\"error\"}[5m])) or vector(0)", "legendFormat": "5xx/s" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "POST /launches p95 latency",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "description": "Tempo de resposta do POST /launches abaixo do qual ficam 95% das requisições (p95), calculado sobre os últimos 5 minutos. No teste de carga a 50 requisições por segundo, fica perto de 6 ms. O alerta LaunchLatencyHigh dispara se passar de 300 ms durante 10 minutos.",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 1 },
+      "fieldConfig": { "defaults": { "unit": "ms" } },
+      "targets": [
+        { "datasource": "Prometheus", "expr": "histogram_quantile(0.95, sum by (le) (rate(launch_request_duration_ms_milliseconds_bucket[5m])))", "legendFormat": "p95" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Outbox",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 }
+    },
+    {
+      "id": 6,
+      "title": "Pending count",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "description": "Quantas mensagens do Outbox ainda não foram publicadas no RabbitMQ (status Pending ou Failed). Com o RabbitMQ no ar, fica em 0 ou perto disso, porque o publisher envia cada mensagem em menos de um segundo. Com o RabbitMQ fora do ar, aumenta um a cada lançamento registrado e volta a 0 quando ele volta. Amarelo a partir de 10, vermelho a partir de 50.",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 10 },
+      "fieldConfig": {
+        "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 10 }, { "color": "red", "value": 50 }] } }
+      },
+      "targets": [{ "datasource": "Prometheus", "expr": "outbox_pending_count", "legendFormat": "pending" }]
+    },
+    {
+      "id": 7,
+      "title": "Oldest pending age (s)",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "description": "Há quantos segundos espera a mensagem mais antiga do Outbox que ainda não foi publicada; 0 quando não há nenhuma pendente. Cresce enquanto o RabbitMQ estiver fora do ar. Amarelo a partir de 30 s, vermelho a partir de 60 s; o alerta OutboxStale dispara se passar de 60 s durante 2 minutos.",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 10 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 30 }, { "color": "red", "value": 60 }] }
+        }
+      },
+      "targets": [{ "datasource": "Prometheus", "expr": "outbox_oldest_age_seconds", "legendFormat": "oldest age" }]
+    },
+    {
+      "id": 8,
+      "title": "Publish failures by reason",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "description": "Falhas por segundo do publisher do Outbox ao enviar mensagens ao RabbitMQ, por motivo (reason): connection (sem conexão com o RabbitMQ, o que a etapa broker_down do smoke.sh provoca), unroutable (nenhuma fila recebeu a mensagem) e nack (o RabbitMQ recusou a mensagem). A mensagem não se perde: continua no Outbox e é enviada de novo, com espera crescente de 2 s até 5 minutos.",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 10 },
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "targets": [
+        { "datasource": "Prometheus", "expr": "sum by (reason) (rate(broker_publish_failures_total[5m])) or vector(0)", "legendFormat": "{{reason}}" }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Consumer",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 }
+    },
+    {
+      "id": 10,
+      "title": "Projection lag p95/p99 (s) — NFR-005",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "description": "Tempo entre o registro de um lançamento e a soma dele nos totais do Consolidado, de ponta a ponta (Outbox, RabbitMQ e consumidor). p95 e p99 são os valores abaixo dos quais ficam 95% e 99% dos eventos, nos últimos 5 minutos. Meta do requisito NFR-005: p95 até 5 s e p99 até 30 s. No teste de carga, fica abaixo de 1 s. O alerta ProjectionLagHigh dispara se o p95 passar de 5 s durante 5 minutos, por exemplo depois que o Consolidado fica parado e processa o atraso acumulado.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 19 },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        { "datasource": "Prometheus", "expr": "histogram_quantile(0.95, sum by (le) (rate(consumer_lag_seconds_bucket[5m])))", "legendFormat": "p95" },
+        { "datasource": "Prometheus", "expr": "histogram_quantile(0.99, sum by (le) (rate(consumer_lag_seconds_bucket[5m])))", "legendFormat": "p99" }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Processed/s by outcome (incl. DLQ)",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "description": "Eventos por segundo tratados pelo consumidor do Consolidado, por resultado (outcome): processed (somado aos totais do dia), duplicate (já estava na Inbox e foi ignorado), retry_transient (falha temporária, como o banco fora do ar; vai para uma fila de espera), retry_unexpected (falha inesperada; vai para uma fila de espera), dead_lettered (falhou nas 3 novas tentativas e foi para a DLQ) e rejected (mensagem inválida, enviada direto para a DLQ, o que a etapa dlq_rejected_message do smoke.sh provoca).",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 19 },
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "targets": [
+        { "datasource": "Prometheus", "expr": "sum by (outcome) (rate(consumer_events_total[1m]))", "legendFormat": "{{outcome}}" }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Broker",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 27 }
+    },
+    {
+      "id": 13,
+      "title": "Queue depth — main, retry.1-3, DLQ (messages ready)",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "description": "Mensagens à espera (coluna Ready no RabbitMQ) em cada fila do Consolidado: a principal consolidation.launch-recorded.v1, as filas de espera retry.1 (5 s), retry.2 (30 s) e retry.3 (120 s) e a DLQ (Dead Letter Queue, mensagens que não puderam ser processadas). O normal é tudo em 0. A principal cresce quando o Consolidado está parado; as de espera, quando o processamento falha. Qualquer mensagem na DLQ dispara o alerta DeadLetterQueueNotEmpty.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 28 },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "targets": [
+        { "datasource": "Prometheus", "expr": "rabbitmq_queue_messages_ready{vhost=\"/\"}", "legendFormat": "{{queue}}" }
+      ]
+    },
+    {
+      "id": 14,
+      "title": "ConsolidationService API",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 36 }
+    },
+    {
+      "id": 15,
+      "title": "Request rate by outcome",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "description": "Requisições por segundo ao GET /consolidation, separadas pelo resultado (outcome): success (200), validation (400, parâmetros de data inválidos), unavailable (503, banco do Consolidado fora do ar), error (500, falha inesperada) e rate_limited (429, o chamador passou do limite de requisições por segundo, docs/05 §1). O smoke.sh padrão nunca provoca um 429.",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 37 },
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "targets": [
+        { "datasource": "Prometheus", "expr": "sum by (outcome) (rate(consolidation_requests_total[1m]))", "legendFormat": "{{outcome}}" }
+      ]
+    },
+    {
+      "id": 16,
+      "title": "GET /consolidation p95 latency",
+      "type": "timeseries",
+      "datasource": "Prometheus",
+      "description": "Tempo de resposta do GET /consolidation abaixo do qual ficam 95% das requisições (p95), calculado sobre os últimos 5 minutos. No teste de carga a 50 requisições por segundo, fica perto de 6 ms. O alerta ConsolidationLatencyHigh dispara se passar de 500 ms durante 10 minutos.",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 37 },
+      "fieldConfig": { "defaults": { "unit": "ms" } },
+      "targets": [
+        { "datasource": "Prometheus", "expr": "histogram_quantile(0.95, sum by (le) (rate(consolidation_query_duration_ms_milliseconds_bucket[5m])))", "legendFormat": "p95" }
+      ]
+    },
+    {
+      "id": 17,
+      "title": "5xx rate",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "description": "Requisições por segundo do Consolidado que terminaram em erro 500 (error) ou 503 (unavailable, banco do Consolidado fora do ar). O smoke.sh padrão não derruba o banco do Consolidado, então o esperado é 0, a não ser que tenha ocorrido um erro 500 ou 503 de verdade. Fica vermelho a partir de 0,1 por segundo; o alerta ConsolidationServiceErrors dispara se os erros passarem de 5% das requisições durante 5 minutos.",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 37 },
+      "fieldConfig": {
+        "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 0.1 }] } }
+      },
+      "targets": [
+        { "datasource": "Prometheus", "expr": "sum(rate(consolidation_requests_total{outcome=~\"error|unavailable\"}[5m])) or vector(0)", "legendFormat": "5xx/s" }
+      ]
+    },
+    {
+      "id": 18,
+      "title": "Availability",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 45 }
+    },
+    {
+      "id": 19,
+      "title": "LaunchService up",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "description": "1 (verde) quando o Prometheus consegue coletar as métricas do LaunchService em /metrics; 0 (vermelho) quando não consegue, por exemplo com o container parado. A coleta é feita a cada 5 s. O alerta TargetDown dispara se ficar em 0 durante 1 minuto.",
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 46 },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        }
+      },
+      "targets": [{ "datasource": "Prometheus", "expr": "up{job=\"launchservice\"}", "legendFormat": "up" }]
+    },
+    {
+      "id": 20,
+      "title": "ConsolidationService up",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "description": "1 (verde) quando o Prometheus consegue coletar as métricas do ConsolidationService em /metrics; 0 (vermelho) quando não consegue, por exemplo com o container parado. A coleta é feita a cada 5 s. O alerta TargetDown dispara se ficar em 0 durante 1 minuto. Com o Consolidado parado, o registro de lançamentos continua funcionando (NFR-A).",
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 46 },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        }
+      },
+      "targets": [{ "datasource": "Prometheus", "expr": "up{job=\"consolidationservice\"}", "legendFormat": "up" }]
+    },
+    {
+      "id": 21,
+      "title": "RabbitMQ up",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "description": "1 (verde) quando o Prometheus consegue coletar as métricas do RabbitMQ (porta 15692); 0 (vermelho) quando não consegue, por exemplo com o container parado. A coleta é feita a cada 5 s. O alerta TargetDown dispara se ficar em 0 durante 1 minuto. Com o RabbitMQ parado, o registro de lançamentos continua funcionando e as mensagens esperam no Outbox (NFR-A).",
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 46 },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        }
+      },
+      "targets": [{ "datasource": "Prometheus", "expr": "up{job=\"rabbitmq\"}", "legendFormat": "up" }]
+    }
+  ]
+}

@@ -1,0 +1,473 @@
+{
+  "info": {
+    "_postman_id": "17e8492b-1a53-589b-b69a-5ec7846bb152",
+    "name": "Cashflow — Lançamentos e Consolidado",
+    "description": "Exercita as duas APIs locais. O pre-request da coleção gera o token JWT (mesmo algoritmo de scripts/dev-jwt/make_token.py) e um X-Correlation-Id novo por requisição; cada POST define a própria Idempotency-Key. Use o environment \"cashflow local\" e rode as pastas em ordem (ou Run collection).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "noauth"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Token HS256 igual ao de scripts/dev-jwt/make_token.py; reaproveitado enquanto faltar mais de 60 s para expirar.",
+          "const now = Math.floor(Date.now() / 1000);",
+          "let token = pm.collectionVariables.get('accessToken');",
+          "const tokenExp = parseInt(pm.collectionVariables.get('accessTokenExp') || '0', 10);",
+          "",
+          "if (!token || tokenExp - now <= 60) {",
+          "    const CryptoJS = require('crypto-js');",
+          "    const base64url = (words) => CryptoJS.enc.Base64.stringify(words)",
+          "        .replace(/=+$/, '').replace(/\\+/g, '-').replace(/\\//g, '_');",
+          "    const encodeJson = (obj) => base64url(CryptoJS.enc.Utf8.parse(JSON.stringify(obj)));",
+          "",
+          "    const header = { alg: 'HS256', typ: 'JWT' };",
+          "    const payload = {",
+          "        iss: pm.environment.get('jwtIssuer'),",
+          "        aud: pm.environment.get('jwtAudience'),",
+          "        sub: pm.environment.get('jwtSubject'),",
+          "        iat: now,",
+          "        nbf: now,",
+          "        exp: now + 3600,",
+          "        scope: pm.environment.get('jwtScopes')",
+          "    };",
+          "    const signingInput = encodeJson(header) + '.' + encodeJson(payload);",
+          "    const signature = base64url(CryptoJS.HmacSHA256(signingInput, pm.environment.get('jwtSigningKey')));",
+          "",
+          "    token = signingInput + '.' + signature;",
+          "    pm.collectionVariables.set('accessToken', token);",
+          "    pm.collectionVariables.set('accessTokenExp', String(payload.exp));",
+          "}",
+          "pm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + token });",
+          "",
+          "// Um X-Correlation-Id novo por requisição; o último fica em correlationId para buscar nos logs.",
+          "const correlationId = 'postman-' + pm.variables.replaceIn('{{$guid}}');",
+          "pm.collectionVariables.set('correlationId', correlationId);",
+          "pm.request.headers.upsert({ key: 'X-Correlation-Id', value: correlationId });"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Lançamentos",
+      "item": [
+        {
+          "name": "Registrar lançamento (201)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Chave nova a cada execução; as duas requisições seguintes reaproveitam esta mesma chave.",
+                  "pm.collectionVariables.set('idempotencyKey', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "",
+                  "const body = pm.response.json();",
+                  "pm.test('devolve launchId e businessDate', () => {",
+                  "    pm.expect(body.launchId).to.be.a('string').and.not.empty;",
+                  "    pm.expect(body.businessDate).to.match(/^\\d{4}-\\d{2}-\\d{2}$/);",
+                  "    pm.expect(body.amountInCents).to.eql(12500);",
+                  "    pm.expect(body.nature).to.eql('Credit');",
+                  "    pm.expect(body.status).to.eql('Recorded');",
+                  "});",
+                  "pm.test('correlationId da resposta = X-Correlation-Id enviado', () => {",
+                  "    pm.expect(body.correlationId).to.eql(pm.request.headers.get('X-Correlation-Id'));",
+                  "});",
+                  "",
+                  "pm.collectionVariables.set('launchId', body.launchId);",
+                  "pm.collectionVariables.set('businessDate', body.businessDate);",
+                  "// Guarda o X-Correlation-Id deste registro: é o que aparece nos logs dos dois serviços.",
+                  "pm.collectionVariables.set('launchCorrelationId', body.correlationId);",
+                  "console.log('correlationId=' + body.correlationId + ' launchId=' + body.launchId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amountInCents\": 12500, \"nature\": \"Credit\", \"description\": \"Venda do pedido 123\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{launchBaseUrl}}/api/v1/launches",
+              "host": [
+                "{{launchBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "launches"
+              ]
+            },
+            "description": "Registra um crédito de R$ 125,00 com uma Idempotency-Key nova. Guarda launchId e businessDate para as próximas requisições."
+          }
+        },
+        {
+          "name": "Repetir mesma chave e payload (200, replay)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Depende de 'Registrar lançamento (201)': sem ele, a variável fica vazia e a API responderia 400 ou 404.",
+                  "if (!pm.collectionVariables.get('idempotencyKey')) {",
+                  "    throw new Error(\"Variável idempotencyKey vazia: envie primeiro 'Registrar lançamento (201)' com o ambiente 'cashflow local' selecionado, na mesma coleção.\");",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('cabeçalho Idempotency-Replayed: true', () => {",
+                  "    pm.expect(pm.response.headers.get('Idempotency-Replayed')).to.eql('true');",
+                  "});",
+                  "pm.test('mesmo launchId do registro original', () => {",
+                  "    pm.expect(pm.response.json().launchId).to.eql(pm.collectionVariables.get('launchId'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amountInCents\": 12500, \"nature\": \"Credit\", \"description\": \"Venda do pedido 123\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{launchBaseUrl}}/api/v1/launches",
+              "host": [
+                "{{launchBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "launches"
+              ]
+            },
+            "description": "Reenvia a mesma Idempotency-Key com o mesmo corpo: o serviço devolve o lançamento original, sem criar outro."
+          }
+        },
+        {
+          "name": "Mesma chave, payload diferente (409)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Depende de 'Registrar lançamento (201)': sem ele, a variável fica vazia e a API responderia 400 ou 404.",
+                  "if (!pm.collectionVariables.get('idempotencyKey')) {",
+                  "    throw new Error(\"Variável idempotencyKey vazia: envie primeiro 'Registrar lançamento (201)' com o ambiente 'cashflow local' selecionado, na mesma coleção.\");",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 Conflict', () => pm.response.to.have.status(409));",
+                  "const body = pm.response.json();",
+                  "pm.test('code = idempotency_payload_mismatch', () => {",
+                  "    pm.expect(body.code).to.eql('idempotency_payload_mismatch');",
+                  "});",
+                  "pm.test('details.launchId aponta para o lançamento original', () => {",
+                  "    pm.expect(body.details.launchId).to.eql(pm.collectionVariables.get('launchId'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amountInCents\": 99999, \"nature\": \"Credit\", \"description\": \"Venda do pedido 123\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{launchBaseUrl}}/api/v1/launches",
+              "host": [
+                "{{launchBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "launches"
+              ]
+            },
+            "description": "Reenvia a mesma Idempotency-Key com outro valor: o serviço recusa, porque a chave já pertence a outra operação."
+          }
+        },
+        {
+          "name": "Sem Idempotency-Key (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
+                  "pm.test('code = missing_idempotency_key', () => {",
+                  "    pm.expect(pm.response.json().code).to.eql('missing_idempotency_key');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"amountInCents\": 12500, \"nature\": \"Credit\", \"description\": \"Venda do pedido 123\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{launchBaseUrl}}/api/v1/launches",
+              "host": [
+                "{{launchBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "launches"
+              ]
+            },
+            "description": "Sem o cabeçalho Idempotency-Key, o registro é recusado."
+          }
+        },
+        {
+          "name": "Consultar lançamento (200)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Depende de 'Registrar lançamento (201)': sem ele, a variável fica vazia e a API responderia 400 ou 404.",
+                  "if (!pm.collectionVariables.get('launchId')) {",
+                  "    throw new Error(\"Variável launchId vazia: envie primeiro 'Registrar lançamento (201)' com o ambiente 'cashflow local' selecionado, na mesma coleção.\");",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('launchId confere', () => {",
+                  "    pm.expect(body.launchId).to.eql(pm.collectionVariables.get('launchId'));",
+                  "});",
+                  "pm.test('valor e natureza conferem', () => {",
+                  "    pm.expect(body.amountInCents).to.eql(12500);",
+                  "    pm.expect(body.nature).to.eql('Credit');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{launchBaseUrl}}/api/v1/launches/{{launchId}}",
+              "host": [
+                "{{launchBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "launches",
+                "{{launchId}}"
+              ]
+            },
+            "description": "Consulta o lançamento registrado no primeiro passo."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Consolidado",
+      "item": [
+        {
+          "name": "Consolidado do dia (200)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Sem um registro anterior, consulta o dia de hoje no fuso de São Paulo.",
+                  "if (!pm.collectionVariables.get('businessDate')) {",
+                  "    let today;",
+                  "    try {",
+                  "        today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });",
+                  "    } catch (e) {",
+                  "        today = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);",
+                  "    }",
+                  "    pm.collectionVariables.set('businessDate', today);",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "// A projeção é atualizada de forma assíncrona: o saldo não é verificado aqui.",
+                  "pm.test('days é uma lista', () => {",
+                  "    pm.expect(pm.response.json().days).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{consolidationBaseUrl}}/api/v1/consolidation?fromDate={{businessDate}}&toDate={{businessDate}}",
+              "host": [
+                "{{consolidationBaseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "consolidation"
+              ],
+              "query": [
+                {
+                  "key": "fromDate",
+                  "value": "{{businessDate}}"
+                },
+                {
+                  "key": "toDate",
+                  "value": "{{businessDate}}"
+                }
+              ]
+            },
+            "description": "Saldo do dia do lançamento. O Consolidado recebe o lançamento por evento, de forma assíncrona: espere cerca de 2 s depois do POST para ver o valor somado."
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "accessTokenExp",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "correlationId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "launchCorrelationId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "idempotencyKey",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "launchId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "businessDate",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}

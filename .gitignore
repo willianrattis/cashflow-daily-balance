@@ -1,0 +1,25 @@
+# .NET
+bin/
+obj/
+TestResults/
+*.user
+.vs/
+.idea/
+*.swp
+
+# Python
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# Coverage
+coverage/
+*.coverage
+*.coveragexml
+coverlet.reports/
+
+# Structurizr local server runtime (images/index/logs/workspace.json), not the DSL source
+docs/diagrams/structurizr/.structurizr/
+docs/diagrams/structurizr/workspace.json

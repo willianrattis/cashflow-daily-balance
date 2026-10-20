@@ -1,0 +1,41 @@
+global using System.Data;
+global using System.Diagnostics;
+global using System.Diagnostics.Metrics;
+global using System.Globalization;
+global using System.Net.Sockets;
+global using System.Security.Claims;
+global using System.Text;
+global using System.Text.Json;
+global using System.Threading.RateLimiting;
+
+global using Microsoft.AspNetCore.Authentication.JwtBearer;
+global using Microsoft.AspNetCore.Authorization;
+global using Microsoft.AspNetCore.Diagnostics;
+global using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+global using Microsoft.AspNetCore.OpenApi;
+global using Microsoft.AspNetCore.RateLimiting;
+global using Microsoft.EntityFrameworkCore;
+global using Microsoft.EntityFrameworkCore.Design;
+global using Microsoft.EntityFrameworkCore.Metadata.Builders;
+global using Microsoft.Extensions.Diagnostics.HealthChecks;
+global using Microsoft.Extensions.Options;
+global using Microsoft.IdentityModel.Tokens;
+global using Microsoft.OpenApi;
+
+global using Npgsql;
+global using OpenTelemetry.Metrics;
+global using RabbitMQ.Client;
+global using RabbitMQ.Client.Events;
+
+global using ConsolidationService.Domain;
+global using ConsolidationService.Features;
+global using ConsolidationService.Features.GetConsolidation;
+global using ConsolidationService.Infrastructure.Auth;
+global using ConsolidationService.Infrastructure.Clock;
+global using ConsolidationService.Infrastructure.Composition;
+global using ConsolidationService.Infrastructure.Errors;
+global using ConsolidationService.Infrastructure.Messaging;
+global using ConsolidationService.Infrastructure.Observability;
+global using ConsolidationService.Infrastructure.Persistence;
+global using ConsolidationService.Infrastructure.Projection;
+global using ConsolidationService.Infrastructure.RateLimiting;

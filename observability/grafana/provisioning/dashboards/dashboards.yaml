@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: CashFlow
+    orgId: 1
+    folder: CashFlow
+    folderUid: cashflow
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards

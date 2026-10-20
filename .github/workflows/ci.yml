@@ -1,0 +1,77 @@
+# CI for the CashFlow repository: restore, build, unit/integration tests, then an
+# end-to-end smoke test against the full docker compose stack.
+#
+# No secrets are required: every credential here is a throwaway local-dev value already
+# committed to docker-compose.yml on purpose (ADR-007) — never reuse them outside a demo/CI run.
+#
+# Actions are pinned to major version tags (not full SHAs, not floating `@main`), per the
+# project's own convention of fixed-but-reasonable version pins (global.json, Directory.Packages.props).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET (SDK pinned in global.json)
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore CashFlow.sln
+
+      - name: Build (Release)
+        run: dotnet build CashFlow.sln -c Release --no-restore
+
+      - name: Test
+        # Testcontainers (PostgreSQL + RabbitMQ) works out of the box on ubuntu-latest — Docker
+        # is already installed and running on GitHub-hosted runners.
+        run: dotnet test CashFlow.sln -c Release --no-build
+
+      - name: Diagrams reproducibility (DSL -> SVG, no drift)
+        # render.sh is fully self-contained (pinned-by-digest Docker images, docs/diagrams/README.md)
+        # — this catches a workspace.dsl edit whose SVG was never re-rendered and committed.
+        run: |
+          scripts/diagrams/render.sh
+          git diff --exit-code docs/diagrams/svg
+
+      - name: docker compose build
+        run: docker compose build
+
+      - name: docker compose up (waits for every service's own healthcheck)
+        # --wait blocks until all services report healthy/running (or the timeout trips),
+        # replacing a hand-rolled polling loop — the two app services already define a
+        # HEALTHCHECK in their Dockerfiles, and postgres/rabbitmq define one in
+        # docker-compose.yml.
+        run: docker compose up -d --wait --wait-timeout 180
+
+      - name: Smoke test
+        run: scripts/e2e/smoke.sh
+
+      - name: Collect docker compose logs
+        if: failure()
+        run: docker compose logs --no-color --timestamps > compose-logs.txt
+
+      - name: Upload docker compose logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-compose-logs
+          path: compose-logs.txt
+          retention-days: 7
+
+      - name: docker compose down
+        if: always()
+        run: docker compose down -v
