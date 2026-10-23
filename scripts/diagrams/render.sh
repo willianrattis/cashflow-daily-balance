@@ -26,6 +26,12 @@ PLANTUML_DIGEST="sha256:9b5071ab56a4192aac458ab4b0d42261c22c8109695894ae5be6013c
 MODEL_DIR="$PWD/docs/diagrams/structurizr"
 SVG_DIR="$PWD/docs/diagrams/svg"
 WORK_DIR="$(mktemp -d)"
+# O comando `mktemp -d` cria a pasta com permissões 0700. No Linux (o ambiente de execução de CI),
+# os contêineres abaixo são executados com um usuário próprio que não possui privilégios de root
+# — diferente do usuário que executa o processo de CI —, por isso eles precisam de permissão de
+# escrita na pasta. O Docker Desktop no macOS não impõe as permissões do sistema host; é por
+# esse motivo que o problema ocorre apenas no ambiente de CI.
+chmod 0777 "$WORK_DIR"
 trap 'rm -rf "$WORK_DIR"' EXIT
 
 for pinned in "$STRUCTURIZR_IMAGE@$STRUCTURIZR_DIGEST" "$PLANTUML_IMAGE@$PLANTUML_DIGEST"; do
