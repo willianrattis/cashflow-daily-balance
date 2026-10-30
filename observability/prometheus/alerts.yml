@@ -13,7 +13,7 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "LaunchService's Outbox has a message older than 60s"
+          summary: "CashFlowEntryService's Outbox has a message older than 60s"
           description: >-
             outbox_oldest_age_seconds has been above 60 seconds for more than 2 minutes.
             The broker is likely unreachable or rejecting publishes; see docs/07-runbooks.md
@@ -32,41 +32,41 @@ groups:
             ou com backlog crescendo).
 
       - alert: DeadLetterQueueNotEmpty
-        expr: rabbitmq_queue_messages{queue="consolidation.launch-recorded.v1.dlq"} > 0
+        expr: rabbitmq_queue_messages{queue="consolidation.cashflow-entry-recorded.v1.dlq"} > 0
         for: 1m
         labels:
           severity: critical
         annotations:
           summary: "Messages sitting in the Dead Letter Queue"
           description: >-
-            rabbitmq_queue_messages for consolidation.launch-recorded.v1.dlq has been above
+            rabbitmq_queue_messages for consolidation.cashflow-entry-recorded.v1.dlq has been above
             zero for more than 1 minute. Inspect before replaying — see docs/07-runbooks.md
             #4 (DLQ não vazia).
 
       - alert: ConsolidationBacklogGrowing
-        expr: deriv(rabbitmq_queue_messages{queue="consolidation.launch-recorded.v1"}[5m]) > 0
+        expr: deriv(rabbitmq_queue_messages{queue="consolidation.cashflow-entry-recorded.v1"}[5m]) > 0
         for: 5m
         labels:
           severity: warning
         annotations:
           summary: "Main consumer queue depth is trending up"
           description: >-
-            rabbitmq_queue_messages for consolidation.launch-recorded.v1 has been growing for
+            rabbitmq_queue_messages for consolidation.cashflow-entry-recorded.v1 has been growing for
             more than 5 minutes — the consumer is likely stopped or falling behind. See
             docs/07-runbooks.md #2 (ConsolidationService parado ou com backlog crescendo).
 
-      - alert: LaunchServiceErrors
-        expr: rate(launch_requests_total{outcome="error"}[5m]) > 0
+      - alert: CashFlowEntryServiceErrors
+        expr: rate(cashflow_entry_requests_total{outcome="error"}[5m]) > 0
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "LaunchService is returning unexpected errors"
+          summary: "CashFlowEntryService is returning unexpected errors"
           description: >-
-            The rate of launch_requests_total with outcome="error" has been above zero for
+            The rate of cashflow_entry_requests_total with outcome="error" has been above zero for
             more than 5 minutes for operation={{ $labels.operation }} — this is the
             `_ => "error"` outcome (anything that is not a validation/conflict failure), not
-            business-rule rejections. Check launchservice logs for the correlationId of a
+            business-rule rejections. Check cashflowentryservice logs for the correlationId of a
             recent failure.
 
       - alert: TargetDown
@@ -97,20 +97,20 @@ groups:
             The share of consolidation_requests_total with outcome="error" has been above
             5% for more than 5 minutes — the same "perda" reading NFR-C applies to the
             Consolidado (A-004), mirrored here as an error-ratio alert instead of
-            LaunchServiceErrors' absolute rate because the Consolidado's accepted loss
+            CashFlowEntryServiceErrors' absolute rate because the Consolidado's accepted loss
             budget is a percentage, not zero. Check consolidationservice logs for the
             correlationId of a recent failure; see docs/07-runbooks.md #7 (Taxa de erro do
             Consolidado ou latência de API acima do orçamento).
 
-      - alert: LaunchLatencyHigh
-        expr: histogram_quantile(0.95, sum(rate(launch_request_duration_ms_milliseconds_bucket[5m])) by (le)) > 300
+      - alert: CashFlowEntryLatencyHigh
+        expr: histogram_quantile(0.95, sum(rate(cashflow_entry_request_duration_ms_milliseconds_bucket[5m])) by (le)) > 300
         for: 10m
         labels:
           severity: warning
         annotations:
-          summary: "LaunchService p95 latency above the NFR-013 target (300ms)"
+          summary: "CashFlowEntryService p95 latency above the NFR-013 target (300ms)"
           description: >-
-            p95 of launch_request_duration_ms has been above 300ms for more than 10
+            p95 of cashflow_entry_request_duration_ms has been above 300ms for more than 10
             minutes — NFR-013's target for the write path. See docs/07-runbooks.md #7
             (Taxa de erro do Consolidado ou latência de API acima do orçamento).
 
