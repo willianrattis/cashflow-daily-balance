@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# Rebuilds the Consolidation projection from scratch, using LaunchService's Outbox as the
-# replay source (docs/04-schema-logico.md "Rebuild da projeção", FR-007/NFR-009). `launches`
+# Rebuilds the Consolidation projection from scratch, using CashFlowEntryService's Outbox as the
+# replay source (docs/04-schema-logico.md "Rebuild da projeção", FR-007/NFR-009). `cash_flow_entries`
 # (the authoritative ledger) is NEVER touched — only the projection's own tables, the
 # consolidation queues and the Outbox's publish bookkeeping are reset.
 #
 # Steps: stop consolidationservice -> truncate inbox_messages/daily_consolidations/
 # projection_metadata -> purge the consolidation queues -> reset every outbox_messages row to
-# Pending (so LaunchService's Outbox Publisher republishes everything) -> start
+# Pending (so CashFlowEntryService's Outbox Publisher republishes everything) -> start
 # consolidationservice -> wait until the Outbox has nothing left to publish and the main queue
 # is drained -> run reconcile.sh to prove the rebuilt projection matches the ledger.
 #
 # Uses the admin/superuser role (`cashflow`) on purpose — it is the only role allowed to read
 # and write both databases from one script; the services themselves connect as the
-# non-superuser `launch_svc`/`consolidation_svc` roles (docs/05-aspectos-transversais.md §1).
+# non-superuser `cashflow_entry_svc`/`consolidation_svc` roles (docs/05-aspectos-transversais.md §1).
 #
 # Usage:
 #   scripts/ops/rebuild-consolidation.sh        # asks for confirmation
@@ -21,12 +21,12 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
-QUEUE_PREFIX="consolidation.launch-recorded.v1"
+QUEUE_PREFIX="consolidation.cashflow-entry-recorded.v1"
 OUTBOX_WAIT_TIMEOUT="${OUTBOX_WAIT_TIMEOUT:-300}"
 
 if [[ "${1:-}" != "--yes" && "${1:-}" != "-y" ]]; then
   echo "Isto apaga a projeção do Consolidado (Inbox, diário, metadata), esvazia as filas de"
-  echo "consolidação e republica TODOS os lançamentos a partir do Outbox. 'launches' não é alterado."
+  echo "consolidação e republica TODOS os lançamentos a partir do Outbox. 'cash_flow_entries' não é alterada."
   read -r -p "Continuar? [s/N] " answer
   [[ "$answer" =~ ^[sSyY]$ ]] || { echo "Cancelado."; exit 0; }
 fi
@@ -58,8 +58,8 @@ else
   done
 fi
 
-echo "Marcando todo o Outbox (launch_db.outbox_messages) como Pending para republicação..."
-docker compose exec -T postgres psql -U cashflow -d launch_db -v ON_ERROR_STOP=1 -q <<'SQL'
+echo "Marcando todo o Outbox (cashflow_entry_db.outbox_messages) como Pending para republicação..."
+docker compose exec -T postgres psql -U cashflow -d cashflow_entry_db -v ON_ERROR_STOP=1 -q <<'SQL'
 UPDATE outbox_messages
 SET status = 'Pending',
     attempt_count = 0,
@@ -79,7 +79,7 @@ echo "Aguardando o Outbox publicar tudo e as filas de consolidação (exceto a D
 start=$(date +%s)
 last_status=""
 while true; do
-  pending=$(docker compose exec -T postgres psql -U cashflow -d launch_db -t -A \
+  pending=$(docker compose exec -T postgres psql -U cashflow -d cashflow_entry_db -t -A \
     -c "SELECT count(*) FROM outbox_messages WHERE status <> 'Published';" 2>/dev/null | tr -d '[:space:]')
 
   # `rabbitmqctl list_queues` failing or returning no rows (broker down/restarting mid-rebuild)

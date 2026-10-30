@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mints a throwaway HS256 JWT to exercise LaunchService/ConsolidationService locally.
+"""Mints a throwaway HS256 JWT to exercise CashFlowEntryService/ConsolidationService locally.
 
 There is no Identity Provider in this challenge (ADR-007) — both services validate tokens
 signed with a shared, publicly-documented dev-only key (see docker-compose.yml / appsettings.json,
@@ -12,7 +12,7 @@ three scopes, for local convenience when you do not need to exercise a narrower 
 
 Examples:
   python3 scripts/dev-jwt/make_token.py
-  python3 scripts/dev-jwt/make_token.py --scope cashflow.launches.write --subject pos-integration
+  python3 scripts/dev-jwt/make_token.py --scope cashflow.entries.write --subject pos-integration
   python3 scripts/dev-jwt/make_token.py --scope cashflow.consolidation.read --subject reporting-integration
 
   # Negative test: a token with the wrong audience -> 401.
@@ -28,7 +28,7 @@ import time
 DEFAULT_KEY = "cashflow-local-dev-signing-key-32-bytes-minimum-change-me"
 DEFAULT_ISSUER = "cashflow-dev-issuer"
 DEFAULT_AUDIENCE = "cashflow-api"
-DEFAULT_SCOPES = ["cashflow.launches.write", "cashflow.launches.read", "cashflow.consolidation.read"]
+DEFAULT_SCOPES = ["cashflow.entries.write", "cashflow.entries.read", "cashflow.consolidation.read"]
 
 
 def b64url(data: bytes) -> str:
@@ -39,7 +39,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "--scope", action="append", default=[],
-        help="Scope, e.g. cashflow.launches.write (repeatable; default: the three scopes)")
+        help="Scope, e.g. cashflow.entries.write (repeatable; default: the three scopes)")
     parser.add_argument("--subject", default="dev-user", help="sub claim (principal id)")
     parser.add_argument("--ttl-minutes", type=int, default=60, help="Token lifetime in minutes")
     parser.add_argument("--issuer", default=DEFAULT_ISSUER)

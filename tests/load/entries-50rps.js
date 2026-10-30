@@ -1,10 +1,10 @@
-// k6 load test — LaunchService write path at the assumed peak (A-013/NFR-011/NFR-013, docs/01).
+// k6 load test — CashFlowEntryService write path at the assumed peak (A-013/NFR-011/NFR-013, docs/01).
 // Run via the official k6 Docker image, attached to the compose network — see scripts/load/run.sh,
 // which also generates the token.
 //
 // A-013 calls for 50 lançamentos/s for 15 minutes; this script defaults to a shorter 2m run so a
 // routine evidence refresh stays fast. To reproduce the full 15-minute assumption:
-//   scripts/load/run.sh launches 15m
+//   scripts/load/run.sh entries 15m
 //
 // Required env vars: BASE_URL, TOKEN.
 // Optional: DURATION (default 2m).
@@ -25,7 +25,7 @@ export const options = {
   // read the actual p(99) value, not just its threshold pass/fail.
   summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(90)', 'p(95)', 'p(99)'],
   scenarios: {
-    launches_peak: {
+    entries_peak: {
       executor: 'constant-arrival-rate',
       // A-013: 50 lançamentos/s is the assumed write peak.
       rate: 50,
@@ -56,13 +56,13 @@ export default function () {
     nature: __ITER % 2 === 0 ? 'Credit' : 'Debit',
   });
 
-  const res = http.post(`${BASE_URL}/api/v1/launches`, payload, {
+  const res = http.post(`${BASE_URL}/api/v1/entries`, payload, {
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${TOKEN}`,
       'Idempotency-Key': `load-key-${uniqueId}`,
     },
-    tags: { name: 'RecordLaunch' },
+    tags: { name: 'RecordEntry' },
   });
 
   check(res, { 'status is 201': (r) => r.status === 201 });

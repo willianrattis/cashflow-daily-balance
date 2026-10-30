@@ -3,7 +3,7 @@
 # history, so tests/load/consolidation-50rps.js exercises a realistic query window (>= 90 days)
 # instead of an empty/all-zero projection.
 #
-# Deliberately a seed script, not the public API: `POST /launches` always assigns `businessDate`
+# Deliberately a seed script, not the public API: `POST /entries` always assigns `businessDate`
 # as today (docs/03-contratos.md — no backdating), so there is no way to produce 90 days of
 # *history* through the API alone. Writes directly to Postgres as the admin role (`cashflow`) on
 # purpose, like every script under scripts/postgres/ and scripts/ops/
