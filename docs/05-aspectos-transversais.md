@@ -25,9 +25,9 @@ controle responde a cada ameaça.
 | Ameaça | Controle | Como verificamos |
 |---|---|---|
 | Token falsificado, vencido ou emitido para outra API | Cada serviço confere a assinatura, o emissor, o `audience` (`cashflow-api`, o mesmo nas duas APIs) e a validade do token. Na Arquitetura Alvo, o provedor de identidade também troca as chaves de assinatura periodicamente (`docs/06-arquitetura-alvo.md` §8). | `JwtAuthenticationTests`, nos dois serviços: token vencido, emissor errado, `audience` inválido ou assinatura inválida → `401`; token sem a permissão (scope) exigida → `403`; token só com a permissão certa → `201` ou `200`. |
-| Requisição ou evento repetido (replay): o mesmo comando reenviado, ou o mesmo evento entregue de novo | `Idempotency-Key`, a Inbox (a tabela dos eventos já aplicados) e restrições `UNIQUE` no banco. | `RecordLaunchTests` (requisições simultâneas com a mesma chave geram um só lançamento) e `ConsumerTests` (um evento entregue de novo não é somado duas vezes). |
-| Alteração ou remoção de um lançamento | Lançamentos só recebem linhas novas: a API não tem `PUT` nem `DELETE`, e um trigger do banco recusa `UPDATE` e `DELETE` em `launches`. Cada serviço usa um usuário de banco sem poderes de administrador, e cada lançamento guarda quem o registrou. O trigger não bloqueia `TRUNCATE`, mas nada nesta entrega executa esse comando em `launches`. | `DatabaseIntegrityTests`: um `UPDATE` ou `DELETE` direto em SQL falha com o erro do trigger. |
-| Corpo da requisição malformado ou malicioso | Validação do formato, com campos desconhecidos recusados. Limites de tamanho: 64 KB (kilobytes) por requisição, 200 caracteres na `Idempotency-Key` e 1000 na descrição. Valor positivo e natureza só `Credit` ou `Debit`. | `InputValidationTests` (`400`), `ProductionErrorEnvelopeTests` (o mesmo `400 invalid_request` com o envelope de erro no ambiente `Production`) e `RecordLaunchTests` (`422` para valor e natureza inválidos). |
+| Requisição ou evento repetido (replay): o mesmo comando reenviado, ou o mesmo evento entregue de novo | `Idempotency-Key`, a Inbox (a tabela dos eventos já aplicados) e restrições `UNIQUE` no banco. | `RecordEntryTests` (requisições simultâneas com a mesma chave geram um só lançamento) e `ConsumerTests` (um evento entregue de novo não é somado duas vezes). |
+| Alteração ou remoção de um lançamento | Lançamentos só recebem linhas novas: a API não tem `PUT` nem `DELETE`, e um trigger do banco recusa `UPDATE` e `DELETE` em `cash_flow_entries`. Cada serviço usa um usuário de banco sem poderes de administrador, e cada lançamento guarda quem o registrou. O trigger não bloqueia `TRUNCATE`, mas nada nesta entrega executa esse comando em `cash_flow_entries`. | `DatabaseIntegrityTests`: um `UPDATE` ou `DELETE` direto em SQL falha com o erro do trigger. |
+| Corpo da requisição malformado ou malicioso | Validação do formato, com campos desconhecidos recusados. Limites de tamanho: 64 KB (kilobytes) por requisição, 200 caracteres na `Idempotency-Key` e 1000 na descrição. Valor positivo e natureza só `Credit` ou `Debit`. | `InputValidationTests` (`400`), `ProductionErrorEnvelopeTests` (o mesmo `400 invalid_request` com o envelope de erro no ambiente `Production`) e `RecordEntryTests` (`422` para valor e natureza inválidos). |
 | Vazamento de dados nos logs | Os serviços não registram tokens, segredos nem o corpo das requisições; o `correlationId` identifica a operação sem expor dados. No ambiente local, os comandos SQL aparecem no log sem os valores (`'?'`). | Leitura dos logs, como no exemplo da §3; nenhum código registra o cabeçalho `Authorization` ou o corpo de uma requisição. |
 | Segredo exposto | Nesta entrega, as senhas e a chave de assinatura são de desenvolvimento e estão no repositório de propósito; fora do ambiente `Development`, o serviço se recusa a iniciar com a chave de desenvolvimento. Na Arquitetura Alvo, os segredos ficam fora do repositório, num cofre de chaves gerenciado, são trocados periodicamente, e cada serviço se autentica no cofre pela própria identidade na nuvem, sem senha guardada. | `JwtSigningKeyGuardTests`: fora de `Development`, o serviço não inicia com a chave de desenvolvimento. Alvo em `docs/06-arquitetura-alvo.md` §8. |
 | Painéis de administração expostos: RabbitMQ (porta 15672), Grafana (3000, com acesso anônimo), Prometheus (9090) e PostgreSQL (5433) | Só ficam disponíveis na máquina local do avaliador (`docker-compose.yml`) e nunca foram pensados para acesso público; as credenciais são de desenvolvimento e estão documentadas. Na Arquitetura Alvo, só se chega a eles por VPN (Virtual Private Network, rede privada virtual) ou por uma máquina de acesso controlado (bastion) numa rede privada, e o Grafana não tem acesso anônimo. | `docker-compose.yml` (portas); nenhum deles é descrito como aberto à internet. |
@@ -50,7 +50,7 @@ sem token válido nunca chega ao limitador, como mostra a penúltima linha da ta
   todas as conexões externas e entre serviços implantados separadamente. Nesta entrega local, o
   tráfego entre os containers não usa TLS (`docs/06-arquitetura-alvo.md` §8).
 - **Menor privilégio.** Lançamentos não grava no banco do Consolidado. Cada serviço se conecta ao
-  PostgreSQL com o próprio usuário, sem poderes de administrador (`launch_svc`,
+  PostgreSQL com o próprio usuário, sem poderes de administrador (`cashflow_entry_svc`,
   `consolidation_svc`), e sem permissão de conexão (`CONNECT`) ao banco do outro. O script
   `scripts/postgres/init-databases.sh` cria esses usuários e retira de todos (`PUBLIC`) a
   permissão de conexão que o PostgreSQL dá por padrão. Os scripts de `scripts/ops/` e
@@ -131,8 +131,8 @@ ordem de tempo, mesmo misturando os dois serviços.
 | Onde o log é escrito | Campos de contexto |
 |---|---|
 | Uma requisição HTTP, nos dois serviços | `service`, `environment`, `correlationId`, `traceId` |
-| O publisher do Outbox, em Lançamentos | `service`, `environment`, `eventId`, `launchId`, `correlationId` |
-| O consumidor, no Consolidado | `service`, `environment`, `eventId`, `launchId`, `correlationId`, `retryCount` (quantas vezes a mensagem já voltou de uma fila de espera) |
+| O publisher do Outbox, em Lançamentos | `service`, `environment`, `eventId`, `entryId`, `correlationId` |
+| O consumidor, no Consolidado | `service`, `environment`, `eventId`, `entryId`, `correlationId`, `retryCount` (quantas vezes a mensagem já voltou de uma fila de espera) |
 
 Os logs nunca registram tokens, segredos nem o conteúdo financeiro completo da requisição.
 
@@ -140,8 +140,8 @@ Os logs nunca registram tokens, segredos nem o conteúdo financeiro completo da 
 
 | Métrica | Para que serve |
 |---|---|
-| `launch_requests_total{operation,outcome}` | Conta os registros (`operation="record"`); `outcome` é `success` (sucesso), `validation` (requisição inválida), `conflict` (conflito de idempotência), `error` ou `rate_limited` (recusado pelo limitador de requisições, `429`). Uma consulta de lançamento recusada pelo limitador também é contada, com `operation="get"`; as consultas atendidas não entram nesta métrica. |
-| `launch_request_duration_ms` | Tempo de cada registro; dele saem o p95 e o p99, os valores abaixo dos quais ficam 95% e 99% das medições. |
+| `cashflow_entry_requests_total{operation,outcome}` | Conta os registros (`operation="record"`); `outcome` é `success` (sucesso), `validation` (requisição inválida), `conflict` (conflito de idempotência), `error` ou `rate_limited` (recusado pelo limitador de requisições, `429`). Uma consulta de lançamento recusada pelo limitador também é contada, com `operation="get"`; as consultas atendidas não entram nesta métrica. |
+| `cashflow_entry_request_duration_ms` | Tempo de cada registro; dele saem o p95 e o p99, os valores abaixo dos quais ficam 95% e 99% das medições. |
 | `outbox_pending_count` e `outbox_oldest_age_seconds` | Quantas mensagens esperam no Outbox e há quanto tempo espera a mais antiga: o risco de algo não ser publicado. |
 | `outbox_published_total` e `outbox_publish_batch_duration_ms` | Quantas mensagens foram publicadas e quanto dura cada ciclo do publisher: reservar um lote de mensagens, publicá-las e confirmar no banco (ADR-003). |
 | `broker_publish_failures_total` | Falhas ao publicar no RabbitMQ, por motivo (`reason`): a saúde da integração. |
@@ -168,7 +168,7 @@ Dois identificadores ligam os logs de uma operação:
 - **`correlationId`** acompanha um lançamento do começo ao fim, atravessando os dois serviços e o
   broker. Vem do cabeçalho `X-Correlation-Id` enviado pelo cliente; se o cliente não enviar,
   Lançamentos gera um. O valor volta ao cliente no cabeçalho da resposta e no campo
-  `correlationId` do lançamento, fica gravado na tabela `launches`, viaja no corpo do evento e no
+  `correlationId` do lançamento, fica gravado na tabela `cash_flow_entries`, viaja no corpo do evento e no
   cabeçalho AMQP (Advanced Message Queuing Protocol, o protocolo do RabbitMQ) `x-correlation-id`, e
   aparece nos logs do publisher e do consumidor. As cópias enviadas às filas de espera e à DLQ
   mantêm o mesmo `correlationId`, no cabeçalho e no corpo, porque o consumidor copia o cabeçalho
@@ -187,7 +187,7 @@ cabeçalho, o valor gerado está no cabeçalho da resposta e no campo `correlati
 1. Procure o valor nos logs dos dois serviços, em ordem de tempo:
 
    ```bash
-   docker compose logs --no-log-prefix launchservice consolidationservice | grep caixa2-pedido-123 | sort
+   docker compose logs --no-log-prefix cashflowentryservice consolidationservice | grep caixa2-pedido-123 | sort
    ```
 
    `--no-log-prefix` tira o nome do container do começo de cada linha; assim, a linha começa pelo
@@ -198,9 +198,9 @@ cabeçalho, o valor gerado está no cabeçalho da resposta e no campo `correlati
 
    | `Timestamp` (UTC) | Serviço e momento | O que a linha mostra | Campos de contexto |
    |---|---|---|---|
-   | `2026-10-21T15:26:09.679Z` a `.687Z` | `LaunchService`, requisição HTTP | A busca pela `Idempotency-Key` e, em seguida, o lançamento e a mensagem do Outbox gravados no banco (`INSERT INTO launches …`, `INSERT INTO outbox_messages …`) | `correlationId: caixa2-pedido-123`, `traceId: 0d83d4f5…` |
-   | `2026-10-21T15:26:09.968Z` | `LaunchService`, publisher do Outbox | "Evento d3f4f3e5… (lançamento 0c744aa6…) publicado no broker." | `correlationId`, `eventId: d3f4f3e5…`, `launchId: 0c744aa6…` |
-   | `2026-10-21T15:26:10.006Z` a `.009Z` | `ConsolidationService`, consumidor | A Inbox, os totais do dia e os dados do último evento gravados (`INSERT INTO inbox_messages …`, `INSERT INTO daily_consolidations …`, `INSERT INTO projection_metadata …`) | `correlationId`, o mesmo `eventId` e o mesmo `launchId`, `retryCount: 0` |
+   | `2026-10-21T15:26:09.679Z` a `.687Z` | `CashFlowEntryService`, requisição HTTP | A busca pela `Idempotency-Key` e, em seguida, o lançamento e a mensagem do Outbox gravados no banco (`INSERT INTO cash_flow_entries …`, `INSERT INTO outbox_messages …`) | `correlationId: caixa2-pedido-123`, `traceId: 0d83d4f5…` |
+   | `2026-10-21T15:26:09.968Z` | `CashFlowEntryService`, publisher do Outbox | "Evento d3f4f3e5… (lançamento 0c744aa6…) publicado no broker." | `correlationId`, `eventId: d3f4f3e5…`, `entryId: 0c744aa6…` |
+   | `2026-10-21T15:26:10.006Z` a `.009Z` | `ConsolidationService`, consumidor | A Inbox, os totais do dia e os dados do último evento gravados (`INSERT INTO inbox_messages …`, `INSERT INTO daily_consolidations …`, `INSERT INTO projection_metadata …`) | `correlationId`, o mesmo `eventId` e o mesmo `entryId`, `retryCount: 0` |
 
    Neste exemplo, entre gravar o lançamento (`09.687Z`) e somá-lo aos totais do dia (`10.008Z`),
    passaram cerca de 0,3 s.
@@ -235,10 +235,10 @@ opção `rule_files`). Elas aparecem, pendentes ou disparadas, em http://localho
 | `ProjectionLagHigh` | p95 de `consumer_lag_seconds` acima de 5 s por 5 min (NFR-005) | O Consolidado está mais atrasado que a meta. |
 | `DeadLetterQueueNotEmpty` | DLQ com alguma mensagem por 1 min | Há uma mensagem que não pôde ser processada. |
 | `ConsolidationBacklogGrowing` | Fila principal do Consolidado crescendo por 5 min | O consumidor não está dando conta das mensagens. |
-| `LaunchServiceErrors` | Taxa de `launch_requests_total{outcome="error"}` acima de zero por 5 min | Erros inesperados no registro. |
+| `CashFlowEntryServiceErrors` | Taxa de `cashflow_entry_requests_total{outcome="error"}` acima de zero por 5 min | Erros inesperados no registro. |
 | `TargetDown` | `up == 0` por 1 min, em qualquer um dos 3 alvos que o Prometheus consulta (os dois serviços e o RabbitMQ) | Um deles não responde ao Prometheus. |
 | `ConsolidationServiceErrors` | Mais de 5% das consultas com `outcome="error"` por 5 min (NFR-C, requisito do PDF: no máximo 5% de perda de requisições, lido como em A-004) | Falhas na consulta acima do limite do PDF. |
-| `LaunchLatencyHigh` | p95 de `launch_request_duration_ms` acima de 300 ms por 10 min (NFR-013, metas de tempo de resposta) | Registro mais lento que a meta. |
+| `CashFlowEntryLatencyHigh` | p95 de `cashflow_entry_request_duration_ms` acima de 300 ms por 10 min (NFR-013, metas de tempo de resposta) | Registro mais lento que a meta. |
 | `ConsolidationLatencyHigh` | p95 de `consolidation_query_duration_ms` acima de 500 ms por 10 min (NFR-013) | Consulta mais lenta que a meta. |
 
 Essas regras só tornam o problema visível no Prometheus. Enviar a notificação — por e-mail ou

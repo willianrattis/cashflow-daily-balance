@@ -3,7 +3,7 @@
 Este documento define o que cada serviço expõe: as APIs HTTP e o evento que Lançamentos publica.
 O contrato é o mínimo necessário para que o `ConsolidationService` nunca entre no caminho do
 registro. As APIs seguem o estilo REST (Representational State Transfer: recursos com endereço
-próprio, como `/launches`, usados com os verbos do HTTP) e trocam JSON. Os exemplos mostram o
+próprio, como `/entries`, usados com os verbos do HTTP) e trocam JSON. Os exemplos mostram o
 contrato; a especificação OpenAPI (a descrição formal da API, em JSON) é gerada a partir do código
 e fica em `/openapi/v1.json` em cada serviço, no ambiente `Development` do Docker Compose.
 
@@ -32,7 +32,7 @@ Exemplo de erro — a mesma `Idempotency-Key` reenviada com outro conteúdo:
   "code": "idempotency_payload_mismatch",
   "message": "A chave já foi usada com um payload diferente.",
   "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
-  "details": { "launchId": "9f2c..." }
+  "details": { "entryId": "9f2c..." }
 }
 ```
 
@@ -53,8 +53,8 @@ perfis de usuário.
 
 | Operação | Permissão (scope) exigida |
 |---|---|
-| Registrar lançamento | `cashflow.launches.write` |
-| Consultar lançamento | `cashflow.launches.read` |
+| Registrar lançamento | `cashflow.entries.write` |
+| Consultar lançamento | `cashflow.entries.read` |
 | Consultar consolidado | `cashflow.consolidation.read` |
 
 Cabeçalhos aceitos pelas duas APIs:
@@ -67,11 +67,11 @@ Cabeçalhos aceitos pelas duas APIs:
 O `X-Correlation-Id` não substitui a `Idempotency-Key`: o primeiro serve para investigar um
 problema, a segunda para evitar um lançamento duplicado.
 
-## LaunchService API
+## CashFlowEntryService API
 
 ### Registrar lançamento
 
-`POST /api/v1/launches`
+`POST /api/v1/entries`
 
 Cabeçalhos obrigatórios:
 
@@ -129,13 +129,13 @@ ambiente — nunca o corpo padrão do framework nem um `500`.
 Respostas de sucesso:
 
 - `201 Created` — lançamento novo. O cabeçalho `Location` traz o endereço dele
-  (`/api/v1/launches/{launchId}`).
+  (`/api/v1/entries/{entryId}`).
 - `200 OK` com o cabeçalho `Idempotency-Replayed: true` — a mesma `Idempotency-Key` com o mesmo
   conteúdo. A resposta é o lançamento original; nada novo é gravado.
 
 ```json
 {
-  "launchId": "9f2c...",
+  "entryId": "9f2c...",
   "amountInCents": 12500,
   "nature": "Credit",
   "businessDate": "2026-10-16",
@@ -147,7 +147,7 @@ Respostas de sucesso:
 
 | Campo | O que é |
 |---|---|
-| `launchId` | Identificador do lançamento: um UUID (Universally Unique Identifier, identificador de 128 bits) gerado pelo servidor. |
+| `entryId` | Identificador do lançamento: um UUID (Universally Unique Identifier, identificador de 128 bits) gerado pelo servidor. |
 | `amountInCents` | Valor em centavos, como enviado. |
 | `nature` | `Credit` ou `Debit`. |
 | `businessDate` | O dia do negócio ao qual o lançamento pertence, definido pelo servidor no fuso de São Paulo. |
@@ -160,10 +160,10 @@ transação (commit). A resposta não espera o broker (o RabbitMQ) nem o Consoli
 
 ### Consultar um lançamento
 
-`GET /api/v1/launches/{launchId}`
+`GET /api/v1/entries/{entryId}`
 
 Devolve o lançamento, com os mesmos campos da resposta de registro, inclusive `recordedAtUtc` e
-`correlationId`. Um `launchId` que não existe recebe `404 launch_not_found`. Não há endpoint
+`correlationId`. Um `entryId` que não existe recebe `404 entry_not_found`. Não há endpoint
 `PUT`, `PATCH` nem `DELETE`: um lançamento nunca muda.
 
 ## ConsolidationService API
@@ -215,7 +215,7 @@ Resposta `200 OK`:
 {
   "fromDate": "2026-10-01",
   "toDate": "2026-10-03",
-  "firstTransactionDate": "2026-09-10",
+  "firstEntryDate": "2026-09-10",
   "openingBalanceInCents": 100000,
   "creditsInCents": 50000,
   "debitsInCents": 20000,
@@ -236,7 +236,7 @@ Resposta `200 OK`:
 | Campo | O que é |
 |---|---|
 | `fromDate`, `toDate` | O intervalo consultado. |
-| `firstTransactionDate` | O primeiro dia, em todo o histórico, que tem algum lançamento. |
+| `firstEntryDate` | O primeiro dia, em todo o histórico, que tem algum lançamento. |
 | `openingBalanceInCents` | Saldo de abertura: a soma de tudo o que foi lançado antes de `fromDate`. |
 | `creditsInCents`, `debitsInCents` | A soma dos créditos e a soma dos débitos dentro do intervalo. |
 | `netChangeInCents` | A variação no intervalo: créditos menos débitos. |
@@ -247,10 +247,10 @@ Resposta `200 OK`:
 | `lastAppliedLagSeconds` | Quanto esse último evento demorou, em segundos, entre o registro e a aplicação (`asOfUtc − lastAppliedEventRecordedAtUtc`). |
 | `projectionVersion` | Contador que aumenta a cada evento aplicado ao Consolidado e recomeça numa reconstrução. Se mudou entre duas consultas, os totais podem ter mudado. |
 
-Se não houver nenhum lançamento no histórico, `firstTransactionDate` é `null`, os totais e cada
+Se não houver nenhum lançamento no histórico, `firstEntryDate` é `null`, os totais e cada
 dia de `days` são zero, e `lastAppliedEventRecordedAtUtc` e `lastAppliedLagSeconds` são `null`,
 porque nunca houve evento a aplicar. Se o banco do Consolidado estiver fora do ar, a API devolve
-`503 consolidation_unavailable`; isso não impede novos registros em `LaunchService`.
+`503 consolidation_unavailable`; isso não impede novos registros em `CashFlowEntryService`.
 
 ### Como medir o atraso do Consolidado (NFR-005)
 
@@ -282,37 +282,37 @@ próprio banco aplica a toda gravação).
 | Situação | Resultado |
 |---|---|
 | Mesma `Idempotency-Key`, mesmo conteúdo | `200` com `Idempotency-Replayed: true` e o lançamento original |
-| Mesma `Idempotency-Key`, conteúdo diferente | `409 idempotency_payload_mismatch`, com o `launchId` original em `details` |
+| Mesma `Idempotency-Key`, conteúdo diferente | `409 idempotency_payload_mismatch`, com o `entryId` original em `details` |
 | Duas requisições com a mesma chave ao mesmo tempo | O banco aceita só uma (restrição `UNIQUE`); a outra lê o lançamento gravado e recebe a mesma resposta de uma repetição |
 
 Exemplo: a chave `venda-0001` chega com R$ 100,00 a crédito e é gravada (`201`). Se o cliente não
-receber a resposta e reenviar a mesma requisição, recebe `200` com o mesmo `launchId`. Se
+receber a resposta e reenviar a mesma requisição, recebe `200` com o mesmo `entryId`. Se
 reenviar a mesma chave com R$ 150,00, recebe `409`.
 
-## Evento `LaunchRecorded.v1`
+## Evento `CashFlowEntryRecorded.v1`
 
-Depois do commit do lançamento, o publisher do Outbox (a tarefa de `LaunchService` que envia as
+Depois do commit do lançamento, o publisher do Outbox (a tarefa de `CashFlowEntryService` que envia as
 mensagens gravadas no Outbox) publica este evento no RabbitMQ. A entrega é "pelo menos uma vez"
 (at-least-once): nenhum evento se perde, mas o mesmo evento pode chegar mais de uma vez. O
 consumidor descarta as cópias com a Inbox e as restrições do banco, pelo `eventId` e pelo
-`launchId`, e assim cada lançamento é somado uma única vez.
+`entryId`, e assim cada lançamento é somado uma única vez.
 
 Roteamento: o evento vai para a exchange `cashflow.events` (o ponto do RabbitMQ que recebe as
-mensagens e as distribui às filas), com a routing key `launch.recorded.v1` (o rótulo que escolhe a
-fila de destino), e chega à fila durável `consolidation.launch-recorded.v1`, do Consolidado. A
+mensagens e as distribui às filas), com a routing key `cashflow.entry.recorded.v1` (o rótulo que escolhe a
+fila de destino), e chega à fila durável `consolidation.cashflow-entry-recorded.v1`, do Consolidado. A
 mensagem leva também o cabeçalho AMQP (Advanced Message Queuing Protocol, o protocolo do RabbitMQ)
 `x-correlation-id`, com o mesmo `correlationId` do corpo.
 
 ```json
 {
   "eventId": "e7c1...",
-  "eventType": "LaunchRecorded",
+  "eventType": "CashFlowEntryRecorded",
   "eventVersion": 1,
   "occurredAtUtc": "2026-10-16T13:20:01.125Z",
   "correlationId": "01J...",
   "causationId": "venda-0001",
   "payload": {
-    "launchId": "9f2c...",
+    "entryId": "9f2c...",
     "amountInCents": 12500,
     "nature": "Credit",
     "businessDate": "2026-10-16",
@@ -324,25 +324,25 @@ mensagem leva também o cabeçalho AMQP (Advanced Message Queuing Protocol, o pr
 | Campo | O que é |
 |---|---|
 | `eventId` | Identificador único do evento (UUID). O consumidor o usa para descartar cópias. |
-| `eventType` | Sempre `LaunchRecorded`. |
+| `eventType` | Sempre `CashFlowEntryRecorded`. |
 | `eventVersion` | A versão do formato do evento; hoje, `1`. |
 | `occurredAtUtc` | Quando o lançamento foi registrado; igual a `payload.recordedAtUtc`. |
 | `correlationId` | O `X-Correlation-Id` da requisição que criou o lançamento. Liga os logs dos dois serviços. |
 | `causationId` | O que causou o evento: a `Idempotency-Key` da requisição de registro. |
-| `payload.launchId` | O identificador do lançamento. O consumidor também o usa para descartar cópias. |
+| `payload.entryId` | O identificador do lançamento. O consumidor também o usa para descartar cópias. |
 | `payload.amountInCents`, `payload.nature` | O valor e a natureza do lançamento. |
 | `payload.businessDate` | O dia do negócio em cujos totais o lançamento entra. |
 | `payload.recordedAtUtc` | O instante do registro, em UTC. |
 
 ### Regras do consumidor
 
-1. Validar o envelope e a versão: tipo `LaunchRecorded`, versão `1`, `launchId` preenchido, valor
+1. Validar o envelope e a versão: tipo `CashFlowEntryRecorded`, versão `1`, `entryId` preenchido, valor
    positivo, natureza válida e datas preenchidas.
 2. Numa só transação local no banco do Consolidado (`Consolidation DB`), gravar o evento na
-   Inbox e somar o valor nos totais do dia. Se o `eventId` ou o `launchId` já estiverem na Inbox,
+   Inbox e somar o valor nos totais do dia. Se o `eventId` ou o `entryId` já estiverem na Inbox,
    o evento é uma cópia: desfazer a transação e confirmar a mensagem sem somar de novo. A
    transação, passo a passo, está em
-   [`docs/04-schema-logico.md`](04-schema-logico.md#consumo-de-launchrecordedv1).
+   [`docs/04-schema-logico.md`](04-schema-logico.md#consumo-de-entryrecordedv1).
 3. Confirmar a mensagem ao broker — o ACK (acknowledgement, confirmação de recebimento) — só
    depois do commit.
 4. Se algo falhar, classificar a falha antes de decidir o destino da mensagem. Uma falha
@@ -367,7 +367,7 @@ conhece. Remover um campo, ou mudar o significado de um campo, exige uma nova ve
 | `400` | Requisição malformada: JSON inválido, campo desconhecido ou longo demais, cabeçalho ou parâmetro ausente ou inválido | `ApiError` | `invalid_request`, `missing_idempotency_key`, `invalid_correlation_id`, `missing_required_parameter`, `invalid_date_format` |
 | `401` | Token ausente ou inválido: assinatura, emissor, `audience` ou validade | Sem corpo | — |
 | `403` | Token válido, mas sem a permissão (scope) da operação | Sem corpo | — |
-| `404` | Lançamento não encontrado | `ApiError` | `launch_not_found` |
+| `404` | Lançamento não encontrado | `ApiError` | `entry_not_found` |
 | `409` | Conflito de idempotência | `ApiError` | `idempotency_payload_mismatch`; `concurrent_write_conflict` (conflito de gravação simultânea que não é o da `Idempotency-Key`) |
 | `413` | Corpo da requisição maior que 64 KB, recusado pelo Kestrel antes de chegar à aplicação | Sem corpo | — |
 | `422` | Requisição bem formada que quebra uma regra de negócio: valor zero ou negativo, natureza inválida, data futura ou intervalo inválido | `ApiError` | `invalid_amount`, `invalid_nature`, `invalid_date_range`, `future_date_not_allowed`, `date_range_too_large` |

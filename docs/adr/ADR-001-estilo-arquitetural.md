@@ -18,7 +18,7 @@ pede.
 Decidimos criar dois serviços, implantados separadamente e cada um com o próprio banco, porque
 essa é a menor divisão que impede uma falha no Consolidado de parar o registro (NFR-A).
 
-- **Lançamentos (`LaunchService`)** valida o pedido, impede lançamentos duplicados (ADR-004) e
+- **Lançamentos (`CashFlowEntryService`)** valida o pedido, impede lançamentos duplicados (ADR-004) e
   grava o lançamento. Na mesma transação, grava numa tabela chamada Outbox a mensagem que vai
   avisar o Consolidado (ADR-003). Também permite consultar um lançamento registrado.
 - **Consolidado (`ConsolidationService`)** recebe essas mensagens e soma cada lançamento ao
@@ -75,7 +75,7 @@ essa é a menor divisão que impede uma falha no Consolidado de parar o registro
 
 - Bom, porque o Consolidado parado ou atrasado não impede novos lançamentos (NFR-A).
 - Bom, porque cada serviço escala conforme a própria carga.
-- Bom, porque fica claro o que é a fonte da verdade (a tabela `launches`) e o que é derivado e
+- Bom, porque fica claro o que é a fonte da verdade (a tabela `cash_flow_entries`) e o que é derivado e
   pode ser reconstruído (os totais do Consolidado).
 - Bom, porque dá para testar a recuperação do Consolidado e reconstruir os totais sem tocar em
   nenhum lançamento.
@@ -104,7 +104,7 @@ consulta atualizada no mesmo instante.
 - **Broker fora do ar:** a transação local grava o lançamento e a mensagem no Outbox mesmo
   assim; o publisher publica mais tarde.
 - **Consolidado reiniciado depois de gravar e antes de confirmar:** o broker entrega a mensagem
-  de novo; a Inbox e a unicidade do `launchId` fazem a segunda entrega ser ignorada (ADR-004).
+  de novo; a Inbox e a unicidade do `entryId` fazem a segunda entrega ser ignorada (ADR-004).
 - **Falha ao somar:** a mensagem não recebe o ACK e vai para nova tentativa ou para a DLQ; os
   totais podem ser reconstruídos a partir dos eventos guardados no banco de Lançamentos.
 

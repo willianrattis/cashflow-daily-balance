@@ -44,40 +44,40 @@ verificar, o teste automatizado que prova o mesmo e como voltar ao estado inicia
 - **Pré-condição:** cenário 1 concluído.
 - **Comandos:**
   ```bash
-  WRITE_TOKEN=$(python3 scripts/dev-jwt/make_token.py --scope cashflow.launches.write)
+  WRITE_TOKEN=$(python3 scripts/dev-jwt/make_token.py --scope cashflow.entries.write)
   READ_TOKEN=$(python3 scripts/dev-jwt/make_token.py --scope cashflow.consolidation.read)
-  curl -i http://localhost:5101/api/v1/launches/00000000-0000-0000-0000-000000000000          # sem token
-  curl -i -H "Authorization: Bearer $READ_TOKEN" http://localhost:5101/api/v1/launches/00000000-0000-0000-0000-000000000000  # scope errado
+  curl -i http://localhost:5101/api/v1/entries/00000000-0000-0000-0000-000000000000          # sem token
+  curl -i -H "Authorization: Bearer $READ_TOKEN" http://localhost:5101/api/v1/entries/00000000-0000-0000-0000-000000000000  # scope errado
   ```
 - **Resultado esperado:** a primeira chamada recebe `401`, sem corpo; a segunda, `403`, sem corpo.
 - **Como verificar:** `curl -i` mostra a linha de status; nenhum corpo de erro é devolvido.
-- **Teste automatizado:** `LaunchService.IntegrationTests/JwtAuthenticationTests.cs`
+- **Teste automatizado:** `CashFlowEntryService.IntegrationTests/JwtAuthenticationTests.cs`
   (`Anonymous_request_returns_401`, `Missing_scope_returns_403`) e o par equivalente em
   `ConsolidationService.IntegrationTests`.
 - **Como voltar ao estado inicial:** nada foi gravado.
 
 ## 3. Registrar um lançamento e consultá-lo
 - **Objetivo:** mostrar o caso básico: registrar um crédito de R$ 100,00 e lê-lo de volta pelo
-  identificador (`launchId`), com a data de negócio definida pelo servidor.
+  identificador (`entryId`), com a data de negócio definida pelo servidor.
 - **Requisito:** BR-01 (requisito de negócio do PDF: "Serviço que faça o controle de
   lançamentos"), FR-001 (registrar um lançamento) e FR-002 (crédito ou débito).
 - **Pré-condição:** `WRITE_TOKEN` do cenário 2.
 - **Comandos:**
   ```bash
-  LAUNCH_READ_TOKEN=$(python3 scripts/dev-jwt/make_token.py --scope cashflow.launches.read)
-  CREDIT=$(curl -s -X POST http://localhost:5101/api/v1/launches \
+  ENTRY_READ_TOKEN=$(python3 scripts/dev-jwt/make_token.py --scope cashflow.entries.read)
+  CREDIT=$(curl -s -X POST http://localhost:5101/api/v1/entries \
     -H "Authorization: Bearer $WRITE_TOKEN" -H "Idempotency-Key: roteiro-credit-1" -H "Content-Type: application/json" \
     -d '{"amountInCents":10000,"nature":"Credit","description":"Venda 1"}')
-  LAUNCH_ID=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['launchId'])" "$CREDIT")
-  curl -s http://localhost:5101/api/v1/launches/$LAUNCH_ID -H "Authorization: Bearer $LAUNCH_READ_TOKEN"
+  ENTRY_ID=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['entryId'])" "$CREDIT")
+  curl -s http://localhost:5101/api/v1/entries/$ENTRY_ID -H "Authorization: Bearer $ENTRY_READ_TOKEN"
   ```
-- **Resultado esperado:** o `POST` responde `201` com `launchId`, `businessDate` (hoje, no fuso
+- **Resultado esperado:** o `POST` responde `201` com `entryId`, `businessDate` (hoje, no fuso
   `America/Sao_Paulo`) e `status: "Recorded"`. O `GET` — com a permissão de leitura
-  `cashflow.launches.read`, diferente da de escrita usada no `POST` — devolve o mesmo registro.
+  `cashflow.entries.read`, diferente da de escrita usada no `POST` — devolve o mesmo registro.
 - **Como verificar:** compare os campos do corpo do `POST` e do `GET`.
-- **Teste automatizado:** `RecordLaunchTests.cs`
-  (`Registering_a_launch_returns_201_and_persists_outbox_without_publishing`) e `GetLaunchTests.cs`
-  (`Getting_an_existing_launch_returns_its_immutable_record`), em `LaunchService.IntegrationTests`.
+- **Teste automatizado:** `RecordEntryTests.cs`
+  (`Registering_a_entry_returns_201_and_persists_outbox_without_publishing`) e `GetEntryTests.cs`
+  (`Getting_an_existing_entry_returns_its_immutable_record`), em `CashFlowEntryService.IntegrationTests`.
 - **Como voltar ao estado inicial:** não há como: um lançamento nunca é alterado nem apagado, por
   desenho.
 
@@ -90,17 +90,17 @@ verificar, o teste automatizado que prova o mesmo e como voltar ao estado inicia
 - **Pré-condição:** cenário 3 (a chave `roteiro-credit-1` já foi usada).
 - **Comandos:**
   ```bash
-  curl -i -X POST http://localhost:5101/api/v1/launches \
+  curl -i -X POST http://localhost:5101/api/v1/entries \
     -H "Authorization: Bearer $WRITE_TOKEN" -H "Idempotency-Key: roteiro-credit-1" -H "Content-Type: application/json" \
     -d '{"amountInCents":10000,"nature":"Credit","description":"Venda 1"}'                 # mesma key, mesmo payload
-  curl -i -X POST http://localhost:5101/api/v1/launches \
+  curl -i -X POST http://localhost:5101/api/v1/entries \
     -H "Authorization: Bearer $WRITE_TOKEN" -H "Idempotency-Key: roteiro-credit-1" -H "Content-Type: application/json" \
     -d '{"amountInCents":99999,"nature":"Credit","description":"Venda 1"}'                 # mesma key, payload diferente
   ```
 - **Resultado esperado:** a primeira responde `200`, com o cabeçalho `Idempotency-Replayed: true`
-  e o mesmo `launchId`; a segunda, `409`, com `code: "idempotency_payload_mismatch"`.
+  e o mesmo `entryId`; a segunda, `409`, com `code: "idempotency_payload_mismatch"`.
 - **Como verificar:** o cabeçalho da primeira resposta; o campo `code` do corpo da segunda.
-- **Teste automatizado:** `RecordLaunchTests.cs`
+- **Teste automatizado:** `RecordEntryTests.cs`
   (`Retry_with_same_key_and_same_payload_replays_without_a_second_movement`,
   `Reusing_the_same_key_with_a_different_payload_returns_409`).
 - **Como voltar ao estado inicial:** nada novo foi gravado.
@@ -113,20 +113,20 @@ verificar, o teste automatizado que prova o mesmo e como voltar ao estado inicia
 - **Pré-condição:** `WRITE_TOKEN` do cenário 2.
 - **Comandos:**
   ```bash
-  curl -i -X POST http://localhost:5101/api/v1/launches -H "Authorization: Bearer $WRITE_TOKEN" \
+  curl -i -X POST http://localhost:5101/api/v1/entries -H "Authorization: Bearer $WRITE_TOKEN" \
     -H "Idempotency-Key: roteiro-invalid-1" -H "Content-Type: application/json" -d '{"amountInCents":0,"nature":"Credit"}'
-  curl -i -X POST http://localhost:5101/api/v1/launches -H "Authorization: Bearer $WRITE_TOKEN" \
+  curl -i -X POST http://localhost:5101/api/v1/entries -H "Authorization: Bearer $WRITE_TOKEN" \
     -H "Idempotency-Key: roteiro-invalid-2" -H "Content-Type: application/json" -d '{"amountInCents":100,"nature":"Invalid"}'
-  curl -i -X POST http://localhost:5101/api/v1/launches -H "Authorization: Bearer $WRITE_TOKEN" \
+  curl -i -X POST http://localhost:5101/api/v1/entries -H "Authorization: Bearer $WRITE_TOKEN" \
     -H "Content-Type: application/json" -d '{"amountInCents":100,"nature":"Credit"}'          # sem Idempotency-Key
-  curl -i -X POST http://localhost:5101/api/v1/launches -H "Authorization: Bearer $WRITE_TOKEN" \
+  curl -i -X POST http://localhost:5101/api/v1/entries -H "Authorization: Bearer $WRITE_TOKEN" \
     -H "Idempotency-Key: roteiro-invalid-3" -H "Content-Type: application/json" \
     -d "{\"amountInCents\":100,\"nature\":\"Credit\",\"description\":\"$(python3 -c "print('e'*70000)")\"}"  # corpo > 64 KB
   ```
 - **Resultado esperado:** valor zero e natureza inválida → `422`; sem `Idempotency-Key` → `400`;
   corpo acima de 64 KB → `413`, sem corpo.
 - **Como verificar:** o campo `code` de cada resposta `400` e `422`; a falta de corpo no `413`.
-- **Teste automatizado:** `RecordLaunchTests.cs` (`Non_positive_amount_returns_422`,
+- **Teste automatizado:** `RecordEntryTests.cs` (`Non_positive_amount_returns_422`,
   `Invalid_nature_returns_422`, `Missing_idempotency_key_returns_400`) e `InputValidationTests.cs`
   (`Oversized_description_returns_400_invalid_request`). O `413` só acontece com o servidor web
   real do .NET (Kestrel), e por isso é provado pelo `scripts/e2e/smoke.sh`
@@ -173,7 +173,7 @@ verificar, o teste automatizado que prova o mesmo e como voltar ao estado inicia
 - **Comandos:**
   ```bash
   docker compose stop consolidationservice
-  curl -i -X POST http://localhost:5101/api/v1/launches -H "Authorization: Bearer $WRITE_TOKEN" \
+  curl -i -X POST http://localhost:5101/api/v1/entries -H "Authorization: Bearer $WRITE_TOKEN" \
     -H "Idempotency-Key: roteiro-outage-1" -H "Content-Type: application/json" -d '{"amountInCents":500,"nature":"Credit"}'
   sleep 1 && docker compose exec -T rabbitmq rabbitmqctl -q list_queues name messages
   docker compose start consolidationservice
@@ -182,9 +182,9 @@ verificar, o teste automatizado que prova o mesmo e como voltar ao estado inicia
 - **Resultado esperado:** o `POST` responde `201` com o Consolidado parado; o `reconcile.sh` sai
   com código `0` depois que o serviço volta e processa as mensagens acumuladas.
 - **Como verificar:** o `list_queues`, rodado antes de religar, mostra a fila
-  `consolidation.launch-recorded.v1` com mensagens acumuladas enquanto o Consolidado está parado.
+  `consolidation.cashflow-entry-recorded.v1` com mensagens acumuladas enquanto o Consolidado está parado.
 - **Teste automatizado:** `scripts/e2e/smoke.sh` (`nfr001_consolidation_down`); além disso, toda a
-  suíte `LaunchService.IntegrationTests` roda com o broker inacessível, de propósito.
+  suíte `CashFlowEntryService.IntegrationTests` roda com o broker inacessível, de propósito.
 - **Como voltar ao estado inicial:** os próprios comandos religam o serviço.
 
 ## 8. Broker fora do ar
@@ -197,10 +197,10 @@ verificar, o teste automatizado que prova o mesmo e como voltar ao estado inicia
 - **Comandos:**
   ```bash
   docker compose stop rabbitmq
-  curl -s -X POST http://localhost:5101/api/v1/launches -H "Authorization: Bearer $WRITE_TOKEN" \
+  curl -s -X POST http://localhost:5101/api/v1/entries -H "Authorization: Bearer $WRITE_TOKEN" \
     -H "Idempotency-Key: roteiro-broker-1" -H "Content-Type: application/json" -d '{"amountInCents":100,"nature":"Credit"}'
   sleep 15   # dá tempo do Outbox Publisher tentar publicar e falhar pelo menos uma vez
-  docker compose exec -T postgres psql -U cashflow -d launch_db -c \
+  docker compose exec -T postgres psql -U cashflow -d cashflow_entry_db -c \
     "SELECT status, attempt_count FROM outbox_messages ORDER BY created_at_utc DESC LIMIT 1;"
   docker compose start rabbitmq
   sleep 20 && ./scripts/ops/reconcile.sh   # repita se ainda FAIL: o consumo pode não ter terminado
@@ -223,11 +223,11 @@ verificar, o teste automatizado que prova o mesmo e como voltar ao estado inicia
   ```bash
   curl -s -u cashflow:cashflow-dev-only -X POST http://localhost:15672/api/exchanges/%2F/cashflow.events/publish \
     -H "Content-Type: application/json" \
-    -d '{"properties":{},"routing_key":"launch.recorded.v1","payload":"not-json","payload_encoding":"string"}'
+    -d '{"properties":{},"routing_key":"cashflow.entry.recorded.v1","payload":"not-json","payload_encoding":"string"}'
   sleep 2 && docker compose exec -T rabbitmq rabbitmqctl -q list_queues name messages | grep dlq
   ./scripts/ops/replay-dlq.sh
   ```
-- **Resultado esperado:** a fila `consolidation.launch-recorded.v1.dlq` ganha 1 mensagem. O
+- **Resultado esperado:** a fila `consolidation.cashflow-entry-recorded.v1.dlq` ganha 1 mensagem. O
   `replay-dlq.sh` a devolve à fila principal, onde ela é recusada de novo: é uma mensagem
   permanentemente inválida, e voltar à DLQ é o esperado, e não um defeito do reenvio.
 - **Como verificar:** a quantidade de mensagens na DLQ antes e depois do reenvio.
@@ -237,7 +237,7 @@ verificar, o teste automatizado que prova o mesmo e como voltar ao estado inicia
   apaga a mensagem que cria quando a DLQ estava vazia antes do passo; se a DLQ já tinha
   mensagens, ele deixa a nova no lugar e só avisa, para não apagar uma mensagem que não é dele).
 - **Como voltar ao estado inicial:** apague a mensagem reenviada:
-  `curl -s -u cashflow:cashflow-dev-only -X POST http://localhost:15672/api/queues/%2F/consolidation.launch-recorded.v1.dlq/get -d '{"count":1,"ackmode":"ack_requeue_false","encoding":"auto"}'`.
+  `curl -s -u cashflow:cashflow-dev-only -X POST http://localhost:15672/api/queues/%2F/consolidation.cashflow-entry-recorded.v1.dlq/get -d '{"count":1,"ackmode":"ack_requeue_false","encoding":"auto"}'`.
 
 ## 10. Durabilidade e recuperação
 - **Objetivo:** mostrar que as mensagens já publicadas sobrevivem a um reinício completo do
@@ -269,7 +269,7 @@ verificar, o teste automatizado que prova o mesmo e como voltar ao estado inicia
 - **Pré-condição:** ambiente no ar, de preferência sem outra carga ao mesmo tempo.
 - **Comandos:**
   ```bash
-  scripts/load/run.sh all   # consolidation + launches, 2 minutos cada
+  scripts/load/run.sh all   # consolidation + entries, 2 minutos cada
   ```
 - **Resultado esperado:** `http_req_failed < 5%` no cenário de consulta (NFR-C; o cenário de
   lançamentos não tem esse limite no k6), `dropped_iterations == 0` e p95 e p99
@@ -279,13 +279,13 @@ verificar, o teste automatizado que prova o mesmo e como voltar ao estado inicia
   requisições que falharam — timeout, erro `5xx` ou conexão recusada. É assim que lemos o NFR-C
   (premissa A-004): nenhum lançamento se perde, por desenho (o Outbox e a Inbox); só a requisição
   pode falhar para o cliente.
-- **Como verificar:** os relatórios `docs/evidence/load/<data>-{consolidation,launches}.md`,
+- **Como verificar:** os relatórios `docs/evidence/load/<data>-{consolidation,entries}.md`,
   gerados pelo script. Os registrados no repositório são
   [2026-10-19-consolidation.md](evidence/load/2026-10-19-consolidation.md) (0% de falha),
   [2026-10-19-launches.md](evidence/load/2026-10-19-launches.md) e
   [2026-10-20-launches.md](evidence/load/2026-10-20-launches.md), o pico de 15 minutos de
-  lançamentos (`scripts/load/run.sh launches 15m`).
-- **Teste automatizado:** `tests/load/consolidation-50rps.js`, `tests/load/launches-50rps.js`,
+  lançamentos (`scripts/load/run.sh entries 15m`).
+- **Teste automatizado:** `tests/load/consolidation-50rps.js`, `tests/load/entries-50rps.js`,
   rodados pelo k6 (ferramenta de teste de carga) dentro de um container.
 - **Como voltar ao estado inicial:** o próprio script faz isso. O teste de consulta grava um
   histórico sintético direto nos totais do Consolidado, para consultar uma janela de datas
@@ -302,14 +302,14 @@ verificar, o teste automatizado que prova o mesmo e como voltar ao estado inicia
   "CashFlow — visão operacional") e `http://localhost:9090/alerts` (9 regras, pendentes ou
   disparadas); depois:
   ```bash
-  docker compose logs launchservice --tail=50 | grep -o '"correlationId":"[^"]*"' | head -5
+  docker compose logs cashflowentryservice --tail=50 | grep -o '"correlationId":"[^"]*"' | head -5
   ```
-- **Resultado esperado:** o painel com as 6 áreas (LaunchService, Outbox, Consumer, Broker,
+- **Resultado esperado:** o painel com as 6 áreas (CashFlowEntryService, Outbox, Consumer, Broker,
   ConsolidationService API, Availability); o `correlationId` presente nas linhas de log JSON de
   cada requisição e do publisher do Outbox.
 - **Como verificar:** [`docs/05-aspectos-transversais.md` §3](05-aspectos-transversais.md#3-observabilidade)
   lista as 9 regras e as condições de cada uma.
-- **Teste automatizado:** `LaunchService.OutboxPublisherTests/CorrelationHeaderTests.cs` (o
+- **Teste automatizado:** `CashFlowEntryService.OutboxPublisherTests/CorrelationHeaderTests.cs` (o
   `correlationId` viaja num cabeçalho da mensagem publicada no RabbitMQ).
 - **Como voltar ao estado inicial:** nada a desfazer: só leitura.
 
@@ -317,9 +317,9 @@ verificar, o teste automatizado que prova o mesmo e como voltar ao estado inicia
 
 | Projeto | O que prova | Comando |
 |---|---|---|
-| `LaunchService.UnitTests` | Regras do lançamento, fingerprint (o resumo do conteúdo da requisição, comparado nas repetições), espera crescente entre as tentativas do publisher (backoff) e `traceId` | `dotnet test tests/LaunchService.UnitTests` |
-| `LaunchService.IntegrationTests` | A API real com PostgreSQL em container: autenticação, idempotência, validação, lançamentos que não podem ser alterados, limite de requisições — tudo sem broker acessível | `dotnet test tests/LaunchService.IntegrationTests` |
-| `LaunchService.OutboxPublisherTests` | O publisher do Outbox contra um RabbitMQ real, em container | `dotnet test tests/LaunchService.OutboxPublisherTests` |
+| `CashFlowEntryService.UnitTests` | Regras do lançamento, fingerprint (o resumo do conteúdo da requisição, comparado nas repetições), espera crescente entre as tentativas do publisher (backoff) e `traceId` | `dotnet test tests/CashFlowEntryService.UnitTests` |
+| `CashFlowEntryService.IntegrationTests` | A API real com PostgreSQL em container: autenticação, idempotência, validação, lançamentos que não podem ser alterados, limite de requisições — tudo sem broker acessível | `dotnet test tests/CashFlowEntryService.IntegrationTests` |
+| `CashFlowEntryService.OutboxPublisherTests` | O publisher do Outbox contra um RabbitMQ real, em container | `dotnet test tests/CashFlowEntryService.OutboxPublisherTests` |
 | `ConsolidationService.UnitTests` | O cálculo do saldo de abertura, dos créditos, dos débitos e do saldo de fechamento; a classificação das falhas do consumidor (temporária ou inesperada); `traceId` | `dotnet test tests/ConsolidationService.UnitTests` |
 | `ConsolidationService.IntegrationTests` | Consumidor, Inbox, DLQ, consulta por intervalo e autenticação, com PostgreSQL e RabbitMQ em containers | `dotnet test tests/ConsolidationService.IntegrationTests` |
 | `tests/load/*.js` | 50 requisições por segundo contra o ambiente real, com limites de tempo de resposta e de falhas | `scripts/load/run.sh all` |

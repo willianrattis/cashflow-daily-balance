@@ -30,7 +30,7 @@ Os mecanismos, um por um:
   se qualquer parte falhar, nada é gravado. São as garantias ACID (Atomicidade, Consistência,
   Isolamento e Durabilidade) de uma transação de banco.
 - **Sem duplicatas.** Uma restrição `UNIQUE` na `Idempotency-Key` (e, no Consolidado, a chave
-  primária `event_id` e uma restrição `UNIQUE` no `launch_id` da Inbox) faz o banco aceitar só a
+  primária `event_id` e uma restrição `UNIQUE` no `entry_id` da Inbox) faz o banco aceitar só a
   primeira de duas gravações simultâneas;
   a segunda recebe um erro, e o código responde com o resultado da primeira (ADR-004).
 - **Regras de domínio no banco.** Restrições `CHECK` valem mesmo que o código tenha um bug.
@@ -44,7 +44,7 @@ Os mecanismos, um por um:
   pode pegar ao mesmo tempo (no PostgreSQL, `SELECT … FOR UPDATE SKIP LOCKED`), sem
   coordenação externa (ADR-003).
 - **Lançamento imutável.** Um trigger (código que o banco executa automaticamente a cada
-  gravação) recusa qualquer `UPDATE` ou `DELETE` em `launches`. Assim, a regra de que um
+  gravação) recusa qualquer `UPDATE` ou `DELETE` em `cash_flow_entries`. Assim, a regra de que um
   lançamento nunca muda (INV-001, invariante: lançamento confirmado é imutável e não pode ser
   excluído) não depende só de a API não oferecer `PUT` ou `DELETE`.
 
@@ -110,7 +110,7 @@ cara demais sem evidência de necessidade.
   do PostgreSQL):** o `ConsumerFailureClassifier` trata como falha temporária, e a nova
   tentativa resolve.
 - **Tabela do Consolidado corrompida:** reconstrução manual a partir do Outbox
-  (`scripts/ops/rebuild-consolidation.sh`, FR-007); `launches` nunca é alterada.
+  (`scripts/ops/rebuild-consolidation.sh`, FR-007); `cash_flow_entries` nunca é alterada.
 
 ## Quando revisitar
 

@@ -21,8 +21,8 @@ implementa login e nenhum depende de outro componente para aceitar uma chamada.
 - **A validação.** Cada serviço age como resource server do OAuth 2.0 (padrão em que a API
   recebe e valida tokens, sem emiti-los) e confere, localmente, a assinatura, o emissor
   (`issuer`), a audience, a validade e o scope exigido pelo endpoint.
-- **A autorização** não tem perfis de pessoas; só três scopes: `cashflow.launches.write`
-  (registrar), `cashflow.launches.read` (consultar lançamentos) e `cashflow.consolidation.read`
+- **A autorização** não tem perfis de pessoas; só três scopes: `cashflow.entries.write`
+  (registrar), `cashflow.entries.read` (consultar lançamentos) e `cashflow.consolidation.read`
   (consultar o Consolidado).
 - **Uma audience só.** Os dois serviços aceitam a mesma audience (`cashflow-api`): esta entrega
   expõe uma única API, e não duas identidades que precisem recusar o token uma da outra.

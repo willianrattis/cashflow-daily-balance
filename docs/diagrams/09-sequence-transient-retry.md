@@ -98,8 +98,8 @@ tentada continua `Pending` e entra no ciclo seguinte.
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Publisher as LaunchService (publisher do Outbox)
-    participant LDB as Launch DB
+    participant Publisher as CashFlowEntryService (publisher do Outbox)
+    participant LDB as Cash Flow Entry DB
     participant Broker as RabbitMQ
 
     Note over Broker: RabbitMQ fora do ar
@@ -135,5 +135,5 @@ sequenceDiagram
 Lançamentos nunca deixa de aceitar registros durante a queda do broker (NFR-001, requisito: o
 Consolidado fora do ar não derruba Lançamentos; o ADR-002 estende a garantia ao broker). O
 publisher do Outbox é uma tarefa em segundo plano (`BackgroundService`), separada do caminho das
-requisições HTTP: o `POST /launches` continua respondendo `201` normalmente, e só a publicação
+requisições HTTP: o `POST /entries` continua respondendo `201` normalmente, e só a publicação
 fica para depois.

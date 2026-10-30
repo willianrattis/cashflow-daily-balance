@@ -22,7 +22,7 @@ Siglas, códigos (como NFR-A ou A-021) e termos técnicos estão explicados no
 | [ADR-001](ADR-001-estilo-arquitetural.md) | Dois serviços separados — Lançamentos e Consolidado —, cada um com o próprio banco, para que o Consolidado fora do ar nunca impeça o registro de lançamentos. | Aceita |
 | [ADR-002](ADR-002-integracao-assincrona.md) | Os dois serviços se comunicam só por mensagens, através do RabbitMQ; Lançamentos nunca espera resposta do Consolidado. | Aceita |
 | [ADR-003](ADR-003-transactional-outbox.md) | O lançamento e a mensagem a publicar são gravados na mesma transação (o Outbox) e publicados depois, para que nenhum lançamento confirmado fique sem evento. | Aceita |
-| [ADR-004](ADR-004-processamento-idempotente.md) | Uma restrição de unicidade do banco impede lançamento duplicado (pela `Idempotency-Key`) e soma duplicada no Consolidado (pelo `eventId` e pelo `launchId`). | Aceita |
+| [ADR-004](ADR-004-processamento-idempotente.md) | Uma restrição de unicidade do banco impede lançamento duplicado (pela `Idempotency-Key`) e soma duplicada no Consolidado (pelo `eventId` e pelo `entryId`). | Aceita |
 | [ADR-005](ADR-005-eventual-consistency.md) | O Consolidado guarda uma linha de totais por dia, atualizada a cada evento, e pode ficar alguns segundos atrás dos Lançamentos. | Aceita |
 | [ADR-006](ADR-006-isolamento-de-dados.md) | Cada serviço acessa o PostgreSQL com um usuário próprio, sem privilégio de administrador, que só conecta ao próprio banco; uma instalação atende um único comerciante. | Aceita |
 | [ADR-007](ADR-007-identity-provider-externo.md) | Um provedor de identidade externo emite os tokens, e cada serviço valida o token e o scope a cada requisição. | Aceita |

@@ -42,8 +42,8 @@ como ser maior que zero) e `NOT NULL` (o campo é obrigatório).
   [`docs/03-contratos.md`](../03-contratos.md#comportamento-de-idempotência-e-conflitos).
 
 **No consumo:** antes de confirmar o recebimento — o ACK (acknowledgement) —, o Consolidado
-grava o `eventId` e o `launchId` na Inbox (tabela `inbox_messages`), na mesma transação em que
-soma o valor. A chave primária (`event_id`) e uma restrição `UNIQUE` (`launch_id`) impedem gravar
+grava o `eventId` e o `entryId` na Inbox (tabela `inbox_messages`), na mesma transação em que
+soma o valor. A chave primária (`event_id`) e uma restrição `UNIQUE` (`entry_id`) impedem gravar
 o mesmo evento duas vezes: numa nova entrega, a gravação falha, a transação é desfeita, nada é
 somado, e a mensagem é confirmada e descartada.
 

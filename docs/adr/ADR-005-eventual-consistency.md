@@ -47,7 +47,7 @@ registro nunca espera por ela.
   abaixo do qual ficam 95% das medições) de 6,1 ms a 50 requisições por segundo
   (`docs/evidence/load/2026-10-19-consolidation.md`) — sem pôr o Consolidado no caminho do
   registro.
-- **Saldo calculado na hora, dentro de Lançamentos** (somar a tabela `launches` a cada
+- **Saldo calculado na hora, dentro de Lançamentos** (somar a tabela `cash_flow_entries` a cada
   consulta). Ganharíamos um saldo sempre atual. Descartamos porque misturaria leitura e escrita
   no mesmo serviço e banco, e uma consulta pesada poderia afetar o registro — o que o NFR-A
   proíbe. Seria a escolha certa com pouco volume e sem exigência de isolar falhas.

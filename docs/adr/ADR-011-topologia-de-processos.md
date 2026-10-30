@@ -5,7 +5,7 @@
 
 ## Contexto
 
-Lançamentos precisa publicar o evento `LaunchRecorded.v1` depois de gravar (ADR-003, decisão
+Lançamentos precisa publicar o evento `CashFlowEntryRecorded.v1` depois de gravar (ADR-003, decisão
 sobre o Outbox); o Consolidado precisa consumi-lo e manter a consulta no ar (ADR-005). Nenhum
 desses dois trabalhos em segundo plano precisa, obrigatoriamente, rodar no mesmo processo da API
 do seu serviço. Onde cada um roda é uma decisão de topologia, separada da decisão de dividir o
@@ -18,7 +18,7 @@ processo do Consolidado, ao lado da API de consulta, porque assim há dois progr
 implantar, e não quatro, sem perder o isolamento entre os serviços que o NFR-001 (requisito: o
 Consolidado fora do ar não derruba Lançamentos) exige.
 
-- `OutboxPublisherService` e `LaunchRecordedConsumerService` são `BackgroundService`s: tarefas
+- `OutboxPublisherService` e `CashFlowEntryRecordedConsumerService` são `BackgroundService`s: tarefas
   contínuas do .NET que rodam no mesmo processo da API.
 - Quando o consumidor não consegue processar uma mensagem, ele a coloca numa fila de espera.
   Cada fila de espera tem um TTL (Time To Live, tempo de vida): quando o tempo acaba, o próprio

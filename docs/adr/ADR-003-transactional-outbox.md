@@ -19,7 +19,7 @@ Decidimos gravar o lançamento e o evento na mesma transação do banco de Lanç
 tabela chamada Outbox, e publicar depois, porque assim o próprio banco garante que os dois
 existem juntos ou nenhum existe, sem uma transação que inclua o broker.
 
-1. **Registro.** Lançamentos grava a linha em `launches` e o evento `LaunchRecorded.v1` em
+1. **Registro.** Lançamentos grava a linha em `cash_flow_entries` e o evento `CashFlowEntryRecorded.v1` em
    `outbox_messages` na mesma transação, e só responde sucesso depois que ela é confirmada.
 2. **Publicação.** O publisher do Outbox roda em segundo plano dentro do próprio Lançamentos
    (um `BackgroundService`, ADR-011). A cada ciclo, lê um lote de até 100 mensagens pendentes
@@ -79,7 +79,7 @@ Detalhes em `OutboxPublisherService`, `RabbitMqEventPublisher` e
 - Ruim, porque o mesmo evento pode ser publicado mais de uma vez (ver Trade-offs); o
   Consolidado descarta a cópia (ADR-004, decisão sobre idempotência).
 - Ruim, porque a tabela do Outbox cresce sem limite. Uma limpeza periódica é evolução futura e
-  exigiria antes mudar a fonte da reconstrução para `launches` (A-012).
+  exigiria antes mudar a fonte da reconstrução para `cash_flow_entries` (A-012).
 - Ruim, porque, quando o registro responde, o Consolidado pode ainda não ter somado o
   lançamento — a consistência eventual, escolhida de propósito (ADR-005).
 
@@ -90,7 +90,7 @@ vezes. Exemplo: o publisher envia o evento de um lançamento de R$ 100,00 e o br
 mas o processo cai antes de marcar a linha como enviada; ao voltar, envia o mesmo evento de
 novo. O mesmo acontece se a confirmação passar do tempo-limite de 5 s: o publisher trata como
 falha e publica de novo, mesmo que o broker tenha recebido a primeira cópia. Isso só é seguro
-porque o Consolidado descarta a cópia repetida pelo `eventId` e pelo `launchId` antes de
+porque o Consolidado descarta a cópia repetida pelo `eventId` e pelo `entryId` antes de
 confirmar o recebimento (ADR-004); sem esse descarte, os R$ 100,00 seriam somados duas vezes.
 
 Aceitamos também interromper o lote inteiro na primeira falha de conexão com o broker. Enquanto
@@ -119,7 +119,7 @@ as linhas que não chegaram a ser tentadas ficam para o ciclo seguinte.
 
 Mover o publisher para um processo separado se a carga dele divergir muito da carga da API
 (ADR-011). Criar uma limpeza do Outbox publicado se o crescimento da tabela pressionar o
-armazenamento — mudando antes a fonte da reconstrução para `launches`.
+armazenamento — mudando antes a fonte da reconstrução para `cash_flow_entries`.
 
 ## Rastreabilidade
 
