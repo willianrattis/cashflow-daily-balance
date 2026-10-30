@@ -1,7 +1,7 @@
 namespace ConsolidationService.Infrastructure.Messaging;
 
 /// <summary>
-/// RabbitMQ topology shared by LaunchService (publisher) and ConsolidationService (consumer).
+/// RabbitMQ topology shared by CashFlowEntryService (publisher) and ConsolidationService (consumer).
 /// Both services declare it independently and idempotently on startup — there is no central
 /// schema/definitions file, so `docker compose up` works with no manual broker setup
 /// (docs/03-contratos.md, ADR-002).
@@ -19,10 +19,10 @@ namespace ConsolidationService.Infrastructure.Messaging;
 public static class CashFlowTopology
 {
     public const string EventsExchange = "cashflow.events";
-    public const string LaunchRecordedRoutingKey = "launch.recorded.v1";
-    public const string ConsolidationQueue = "consolidation.launch-recorded.v1";
-    public const string DeadLetterQueue = "consolidation.launch-recorded.v1.dlq";
-    private const string RetryQueuePrefix = "consolidation.launch-recorded.v1.retry.";
+    public const string CashFlowEntryRecordedRoutingKey = "cashflow.entry.recorded.v1";
+    public const string ConsolidationQueue = "consolidation.cashflow-entry-recorded.v1";
+    public const string DeadLetterQueue = "consolidation.cashflow-entry-recorded.v1.dlq";
+    private const string RetryQueuePrefix = "consolidation.cashflow-entry-recorded.v1.retry.";
 
     public const string RetryCountHeader = "x-retry-count";
     public const string FailureReasonHeader = "x-failure-reason";

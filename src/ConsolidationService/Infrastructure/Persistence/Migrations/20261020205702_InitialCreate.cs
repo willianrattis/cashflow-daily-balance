@@ -36,7 +36,7 @@ namespace ConsolidationService.Infrastructure.Persistence.Migrations
                 columns: table => new
                 {
                     event_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    launch_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    entry_id = table.Column<Guid>(type: "uuid", nullable: false),
                     event_type = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
                     event_version = table.Column<int>(type: "integer", nullable: false),
                     received_at_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
@@ -64,9 +64,9 @@ namespace ConsolidationService.Infrastructure.Persistence.Migrations
                 });
 
             migrationBuilder.CreateIndex(
-                name: "ux_inbox_launch_id",
+                name: "ux_inbox_entry_id",
                 table: "inbox_messages",
-                column: "launch_id",
+                column: "entry_id",
                 unique: true);
         }
 

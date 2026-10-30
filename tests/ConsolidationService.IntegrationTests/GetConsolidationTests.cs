@@ -5,7 +5,7 @@ public class GetConsolidationTests(ConsolidationServiceTestFixture fixture)
 {
     private async Task SeedAsync(DateOnly businessDate, long amountInCents, string nature, DateTime? recordedAtUtc = null)
     {
-        await TestEventPublisher.PublishLaunchRecordedAsync(
+        await TestEventPublisher.PublishCashFlowEntryRecordedAsync(
             fixture, Guid.NewGuid(), amountInCents, nature, businessDate, recordedAtUtc ?? DateTime.UtcNow);
 
         await Eventually.WaitUntilAsync(async () =>

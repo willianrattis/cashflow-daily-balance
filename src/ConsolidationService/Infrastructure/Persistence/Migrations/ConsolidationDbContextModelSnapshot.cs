@@ -80,9 +80,9 @@ namespace ConsolidationService.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("event_version");
 
-                    b.Property<Guid>("LaunchId")
+                    b.Property<Guid>("EntryId")
                         .HasColumnType("uuid")
-                        .HasColumnName("launch_id");
+                        .HasColumnName("entry_id");
 
                     b.Property<DateTime?>("ProcessedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -100,9 +100,9 @@ namespace ConsolidationService.Infrastructure.Persistence.Migrations
 
                     b.HasKey("EventId");
 
-                    b.HasIndex("LaunchId")
+                    b.HasIndex("EntryId")
                         .IsUnique()
-                        .HasDatabaseName("ux_inbox_launch_id");
+                        .HasDatabaseName("ux_inbox_entry_id");
 
                     b.ToTable("inbox_messages", (string)null);
                 });

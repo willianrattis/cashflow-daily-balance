@@ -1,17 +1,17 @@
 namespace ConsolidationService.IntegrationTests.Infrastructure;
 
 /// <summary>
-/// Publishes directly onto the shared exchange the same way LaunchService's Outbox Publisher
-/// would, so these tests exercise the real consumer (<c>LaunchRecordedConsumerService</c>) end to
+/// Publishes directly onto the shared exchange the same way CashFlowEntryService's Outbox Publisher
+/// would, so these tests exercise the real consumer (<c>CashFlowEntryRecordedConsumerService</c>) end to
 /// end instead of calling its internals directly.
 /// </summary>
 public static class TestEventPublisher
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    public static Task PublishLaunchRecordedAsync(
+    public static Task PublishCashFlowEntryRecordedAsync(
         ConsolidationServiceTestFixture fixture,
-        Guid launchId,
+        Guid entryId,
         long amountInCents,
         string nature,
         DateOnly businessDate,
@@ -23,14 +23,14 @@ public static class TestEventPublisher
         var envelope = new
         {
             eventId = eventId ?? Guid.NewGuid(),
-            eventType = "LaunchRecorded",
+            eventType = "CashFlowEntryRecorded",
             eventVersion = 1,
             occurredAtUtc = recordedAtUtc,
             correlationId = correlationId ?? "test-correlation",
             causationId = "test-causation",
             payload = new
             {
-                launchId,
+                entryId,
                 amountInCents,
                 nature,
                 businessDate,
@@ -69,7 +69,7 @@ public static class TestEventPublisher
 
         await channel.BasicPublishAsync(
             exchange: CashFlowTopology.EventsExchange,
-            routingKey: CashFlowTopology.LaunchRecordedRoutingKey,
+            routingKey: CashFlowTopology.CashFlowEntryRecordedRoutingKey,
             mandatory: false,
             basicProperties: properties,
             body: body,

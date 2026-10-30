@@ -150,7 +150,7 @@ public static class GetConsolidationEndpoint
         var credits = windowRows.Sum(r => r.CreditsInCents);
         var debits = windowRows.Sum(r => r.DebitsInCents);
 
-        var firstTransactionDate = await db.DailyConsolidations
+        var firstEntryDate = await db.DailyConsolidations
             .OrderBy(d => d.BusinessDate)
             .Select(d => (DateOnly?)d.BusinessDate)
             .FirstOrDefaultAsync(ct);
@@ -168,7 +168,7 @@ public static class GetConsolidationEndpoint
             .ToList();
 
         // asOfUtc = when the projection was last updated, not "now": a quiet period with no
-        // recent launches is not stale (NFR-005). Falls back to now only when there is no
+        // recent entries is not stale (NFR-005). Falls back to now only when there is no
         // metadata yet (no applied event) — the empty projection is, trivially, current as of
         // right now.
         var asOfUtc = metadata?.LastAppliedAtUtc ?? DateTime.UtcNow;
@@ -180,7 +180,7 @@ public static class GetConsolidationEndpoint
         return new ConsolidationResponse(
             FromDate: fromDate,
             ToDate: toDate,
-            FirstTransactionDate: firstTransactionDate,
+            FirstEntryDate: firstEntryDate,
             OpeningBalanceInCents: totals.OpeningBalanceInCents,
             CreditsInCents: totals.CreditsInCents,
             DebitsInCents: totals.DebitsInCents,

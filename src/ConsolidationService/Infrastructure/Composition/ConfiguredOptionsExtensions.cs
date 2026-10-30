@@ -7,7 +7,7 @@ public static class ConfiguredOptionsExtensions
     {
         // ValidateOnStart (not just Validate) makes an invalid value fail the host at startup, in
         // `app.Build()`/`app.Run()` — before the process ever reports healthy or consumes a message —
-        // instead of surfacing only when LaunchRecordedConsumerService first builds the retry ladder
+        // instead of surfacing only when CashFlowEntryRecordedConsumerService first builds the retry ladder
         // (`CashFlowTopology.BuildRetryLevels`, which already throws for an empty list, but not until the
         // hosted service starts, and never for a configured delay that is zero/negative).
         services.AddOptions<RabbitMqOptions>()

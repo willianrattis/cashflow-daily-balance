@@ -19,7 +19,7 @@ public sealed class BearerSecuritySchemeTransformer : IOpenApiDocumentTransforme
             BearerFormat = "JWT",
             In = ParameterLocation.Header,
             Description = "Token de desenvolvimento: gere com scripts/dev-jwt/make_token.py (ver README.md). " +
-                "Scopes: cashflow.launches.write, cashflow.launches.read, cashflow.consolidation.read."
+                "Scopes: cashflow.entries.write, cashflow.entries.read, cashflow.consolidation.read."
         };
 
         var requirement = new OpenApiSecurityRequirement

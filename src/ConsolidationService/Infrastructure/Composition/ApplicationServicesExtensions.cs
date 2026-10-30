@@ -7,8 +7,8 @@ public static class ApplicationServicesExtensions
     {
         services.AddSingleton<IBusinessClock, BusinessClock>();
         services.AddSingleton<ConsolidationServiceMetrics>();
-        services.AddScoped<ILaunchRecordedProjector, LaunchRecordedProjector>();
-        services.AddHostedService<LaunchRecordedConsumerService>();
+        services.AddScoped<ICashFlowEntryRecordedProjector, CashFlowEntryRecordedProjector>();
+        services.AddHostedService<CashFlowEntryRecordedConsumerService>();
 
         return services;
     }
