@@ -40,8 +40,8 @@ serviços separados, cada um com o próprio banco, e eles só conversam por mens
 
 ### Os dois serviços
 
-- **Lançamentos** (`LaunchService`, porta 5101) registra cada crédito ou débito. A tabela
-  `launches` é a fonte da verdade: o registro oficial do qual os totais são calculados. Ela só
+- **Lançamentos** (`CashFlowEntryService`, porta 5101) registra cada crédito ou débito. A tabela
+  `cash_flow_entries` é a fonte da verdade: o registro oficial do qual os totais são calculados. Ela só
   recebe linhas novas; um gatilho (trigger) no banco impede alterar ou apagar uma linha.
 - **Consolidado** (`ConsolidationService`, porta 5102) guarda os totais de cada dia e responde à
   consulta de saldo. É um dado derivado: pode ficar alguns segundos atrás de Lançamentos e pode
@@ -58,7 +58,7 @@ roda no `docker compose`, e como eles se comunicam.
 Os passos 1 a 4 acontecem dentro da requisição do cliente; os passos 5 a 8, depois, em segundo
 plano.
 
-1. O cliente envia `POST /api/v1/launches` com o cabeçalho `Idempotency-Key`, um identificador
+1. O cliente envia `POST /api/v1/entries` com o cabeçalho `Idempotency-Key`, um identificador
    que ele escolhe para aquela operação. Se a resposta se perder e ele reenviar a mesma chave com
    o mesmo corpo, recebe o lançamento original, sem criar um segundo.
 2. Lançamentos valida o corpo (valor positivo em centavos, natureza `Credit` ou `Debit`) e a
@@ -131,9 +131,9 @@ evidência completa estão em [`docs/09-rastreabilidade.md`](docs/09-rastreabili
 
 | Item do PDF | Onde está atendido |
 |---|---|
-| **BR-01** Serviço de controle de lançamentos | `src/LaunchService/` · [`RecordLaunchTests.cs`](tests/LaunchService.IntegrationTests/RecordLaunchTests.cs) |
+| **BR-01** Serviço de controle de lançamentos | `src/CashFlowEntryService/` · [`RecordEntryTests.cs`](tests/CashFlowEntryService.IntegrationTests/RecordEntryTests.cs) |
 | **BR-02** Consolidado diário (saldo de cada dia) | `src/ConsolidationService/`, resposta com `days[]` · [`GetConsolidationTests.cs`](tests/ConsolidationService.IntegrationTests/GetConsolidationTests.cs) |
-| **NFR-A** Lançamentos não fica indisponível se o Consolidado cair | [Seção 9](#9-provar-que-lançamentos-não-depende-do-consolidado-nfr-a) · [`scripts/e2e/smoke.sh`](scripts/e2e/smoke.sh) · [`BrokerUnreachableTests.cs`](tests/LaunchService.IntegrationTests/BrokerUnreachableTests.cs) |
+| **NFR-A** Lançamentos não fica indisponível se o Consolidado cair | [Seção 9](#9-provar-que-lançamentos-não-depende-do-consolidado-nfr-a) · [`scripts/e2e/smoke.sh`](scripts/e2e/smoke.sh) · [`BrokerUnreachableTests.cs`](tests/CashFlowEntryService.IntegrationTests/BrokerUnreachableTests.cs) |
 | **NFR-B/NFR-C** 50 requisições por segundo, até 5% de perda | [`docs/evidence/load/`](docs/evidence/load/) (0% de falha) |
 | **MR-01** Domínios funcionais e capacidades de negócio | [`docs/02-capacidades-e-dominios.md`](docs/02-capacidades-e-dominios.md) |
 | **MR-02** Requisitos funcionais e não funcionais refinados | [`docs/01-requisitos-e-assumptions.md`](docs/01-requisitos-e-assumptions.md) |
@@ -178,14 +178,14 @@ Na raiz do repositório:
 docker compose up -d --build --wait
 ```
 
-O comando compila as duas APIs e sobe seis serviços: `launchservice`, `consolidationservice`,
+O comando compila as duas APIs e sobe seis serviços: `cashflowentryservice`, `consolidationservice`,
 `postgres`, `rabbitmq`, `prometheus` e `grafana`. O `--wait` só devolve o terminal quando os
 quatro serviços com verificação de saúde (as duas APIs, o PostgreSQL e o RabbitMQ) estão
 saudáveis.
 
 Na primeira subida, o script [`scripts/postgres/init-databases.sh`](scripts/postgres/init-databases.sh)
-cria os bancos `launch_db` e `consolidation_db` e um usuário de banco para cada serviço
-(`launch_svc` e `consolidation_svc`). Ao iniciar, cada serviço cria as próprias tabelas, e o
+cria os bancos `cashflow_entry_db` e `consolidation_db` e um usuário de banco para cada serviço
+(`cashflow_entry_svc` e `consolidation_svc`). Ao iniciar, cada serviço cria as próprias tabelas, e o
 Consolidado cria no RabbitMQ a fila principal, as três filas de nova tentativa e a DLQ.
 
 ### Verificar que subiu
@@ -209,10 +209,10 @@ senhas são de desenvolvimento e estão em [`docker-compose.yml`](docker-compose
 | Saúde: pronto para atender | `http://localhost:5101/health/ready` · `http://localhost:5102/health/ready` | `Healthy` quando o serviço alcança o próprio banco |
 | Saúde: conexão com o RabbitMQ | `http://localhost:5101/health/broker` · `http://localhost:5102/health/broker` | `Healthy` ou `Degraded` (ainda HTTP 200). Fica fora do `/health/ready` de propósito: o RabbitMQ fora do ar não tira Lançamentos do ar |
 | Métricas das APIs | `http://localhost:5101/metrics` · `http://localhost:5102/metrics` | Formato do Prometheus, por exemplo `outbox_pending_count` |
-| RabbitMQ — painel | http://localhost:15672 (filas em http://localhost:15672/#/queues) | Login `cashflow` / `cashflow-dev-only`. Fila principal `consolidation.launch-recorded.v1`, filas `….retry.1` a `….retry.3` e `….dlq` |
-| Prometheus — alvos e alertas | http://localhost:9090/targets · http://localhost:9090/alerts | 3 alvos `UP` (`launchservice`, `consolidationservice`, `rabbitmq`) e as 9 regras de alerta |
+| RabbitMQ — painel | http://localhost:15672 (filas em http://localhost:15672/#/queues) | Login `cashflow` / `cashflow-dev-only`. Fila principal `consolidation.cashflow-entry-recorded.v1`, filas `….retry.1` a `….retry.3` e `….dlq` |
+| Prometheus — alvos e alertas | http://localhost:9090/targets · http://localhost:9090/alerts | 3 alvos `UP` (`cashflowentryservice`, `consolidationservice`, `rabbitmq`) e as 9 regras de alerta |
 | Grafana — painel | http://localhost:3000/d/cashflow-operacional | "CashFlow — visão operacional", sem login (só leitura); administrador: `admin` / `cashflow-dev-only` |
-| PostgreSQL | `localhost:5433` | Bancos `launch_db` e `consolidation_db`. A porta 5433 evita conflito com um PostgreSQL local |
+| PostgreSQL | `localhost:5433` | Bancos `cashflow_entry_db` e `consolidation_db`. A porta 5433 evita conflito com um PostgreSQL local |
 | RabbitMQ — protocolo AMQP (Advanced Message Queuing Protocol) | `localhost:5672` | Usada pelos serviços; não abre no navegador |
 
 ### Encerrar
@@ -233,7 +233,7 @@ assinados com uma chave de desenvolvimento que está no repositório de propósi
 
 ```bash
 python3 scripts/dev-jwt/make_token.py                                      # as três permissões, vale para as duas APIs
-python3 scripts/dev-jwt/make_token.py --scope cashflow.launches.write      # só registrar
+python3 scripts/dev-jwt/make_token.py --scope cashflow.entries.write      # só registrar
 python3 scripts/dev-jwt/make_token.py --scope cashflow.consolidation.read  # só consultar o consolidado
 python3 scripts/dev-jwt/make_token.py --audience not-cashflow-api          # token para outra API -> 401
 ```
@@ -244,8 +244,8 @@ Cada operação exige uma permissão (scope); com token válido mas sem a permis
 
 | Operação | Permissão exigida |
 |---|---|
-| `POST /api/v1/launches` | `cashflow.launches.write` |
-| `GET /api/v1/launches/{launchId}` | `cashflow.launches.read` |
+| `POST /api/v1/entries` | `cashflow.entries.write` |
+| `GET /api/v1/entries/{entryId}` | `cashflow.entries.read` |
 | `GET /api/v1/consolidation` | `cashflow.consolidation.read` |
 
 Cada chamador (o `sub` do token) pode fazer até 100 registros e 500 consultas por segundo
@@ -261,7 +261,7 @@ seguintes usam valores dos anteriores.
 1. Gere um token: `python3 scripts/dev-jwt/make_token.py`.
 2. Clique em **Authorize**, cole só o token (sem a palavra `Bearer`), clique em **Authorize** e
    feche a janela.
-3. Abra **`POST /api/v1/launches`** e clique em **Try it out**. Preencha:
+3. Abra **`POST /api/v1/entries`** e clique em **Try it out**. Preencha:
    - `Idempotency-Key`: qualquer texto de até 200 caracteres, por exemplo `swagger-001`. Use um
      valor novo para cada lançamento novo.
    - `X-Correlation-Id`: opcional; se ficar vazio, o serviço gera um.
@@ -271,18 +271,18 @@ seguintes usam valores dos anteriores.
      {"amountInCents": 12500, "nature": "Credit", "description": "Venda pelo Swagger"}
      ```
 
-   Clique em **Execute**. Esperado: `201`, com `launchId`, `businessDate` e
-   `"status": "Recorded"`. Anote o `launchId` e o `businessDate`.
-4. Clique em **Execute** de novo, sem mudar nada. Esperado: `200`, o mesmo `launchId` e o
+   Clique em **Execute**. Esperado: `201`, com `entryId`, `businessDate` e
+   `"status": "Recorded"`. Anote o `entryId` e o `businessDate`.
+4. Clique em **Execute** de novo, sem mudar nada. Esperado: `200`, o mesmo `entryId` e o
    cabeçalho de resposta `idempotency-replayed: true`. Nenhum lançamento novo foi criado.
 5. Mude só `amountInCents` para `99999`, mantendo a mesma chave, e execute. Esperado: `409`, com
-   `"code": "idempotency_payload_mismatch"` e `details.launchId` apontando para o lançamento
+   `"code": "idempotency_payload_mismatch"` e `details.entryId` apontando para o lançamento
    original.
 6. Teste as validações, cada uma com uma chave nova:
    - `"nature": "credit"` (minúsculo) → `422 invalid_nature`. A natureza aceita exatamente
      `Credit` ou `Debit`.
    - `"amountInCents": 0` → `422 invalid_amount`.
-7. Abra **`GET /api/v1/launches/{launchId}`**, informe o `launchId` do passo 3 e execute.
+7. Abra **`GET /api/v1/entries/{entryId}`**, informe o `entryId` do passo 3 e execute.
    Esperado: `200` com o valor `12500` e a natureza `Credit`.
 
 **Consolidado — http://localhost:5102/swagger**
@@ -324,7 +324,7 @@ O ambiente já traz os valores certos para o `docker compose`; não é preciso e
 
 | Variável do ambiente | Valor | Para quê |
 |---|---|---|
-| `launchBaseUrl` | `http://localhost:5101` | Endereço de Lançamentos |
+| `entryBaseUrl` | `http://localhost:5101` | Endereço de Lançamentos |
 | `consolidationBaseUrl` | `http://localhost:5102` | Endereço do Consolidado |
 | `jwtSigningKey`, `jwtIssuer`, `jwtAudience` | Os mesmos de `docker-compose.yml` | Assinar o token. Se mudar um deles, mude também nos serviços |
 | `jwtScopes` | As três permissões | O que o token pode fazer |
@@ -332,7 +332,7 @@ O ambiente já traz os valores certos para o `docker compose`; não é preciso e
 
 Antes de cada requisição, o script da coleção gera o token (e o reaproveita enquanto faltar mais
 de 1 minuto para expirar) e um `X-Correlation-Id` novo. Os valores gerados durante a execução
-(`launchId`, `businessDate`, `idempotencyKey`, `launchCorrelationId` e outros) ficam nas
+(`entryId`, `businessDate`, `idempotencyKey`, `entryCorrelationId` e outros) ficam nas
 variáveis da coleção (aba **Variables** da coleção), não no ambiente.
 
 **Executar a coleção inteira**
@@ -346,11 +346,11 @@ variáveis da coleção (aba **Variables** da coleção), não no ambiente.
 
 | Ordem | Requisição | Resposta esperada | O que os testes conferem |
 |---|---|---|---|
-| 1 | Lançamentos › Registrar lançamento (201) | `201` | `launchId`, `businessDate`, valor `12500`, `Credit`, `Recorded` e `correlationId` igual ao enviado |
-| 2 | Lançamentos › Repetir mesma chave e payload (200, replay) | `200` | Cabeçalho `Idempotency-Replayed: true` e o mesmo `launchId` |
-| 3 | Lançamentos › Mesma chave, payload diferente (409) | `409` | `code` = `idempotency_payload_mismatch` e `details.launchId` = o original |
+| 1 | Lançamentos › Registrar lançamento (201) | `201` | `entryId`, `businessDate`, valor `12500`, `Credit`, `Recorded` e `correlationId` igual ao enviado |
+| 2 | Lançamentos › Repetir mesma chave e payload (200, replay) | `200` | Cabeçalho `Idempotency-Replayed: true` e o mesmo `entryId` |
+| 3 | Lançamentos › Mesma chave, payload diferente (409) | `409` | `code` = `idempotency_payload_mismatch` e `details.entryId` = o original |
 | 4 | Lançamentos › Sem Idempotency-Key (400) | `400` | `code` = `missing_idempotency_key` |
-| 5 | Lançamentos › Consultar lançamento (200) | `200` | Mesmo `launchId`, valor e natureza |
+| 5 | Lançamentos › Consultar lançamento (200) | `200` | Mesmo `entryId`, valor e natureza |
 | 6 | Consolidado › Consolidado do dia (200) | `200` | Que `days` é uma lista |
 
 A requisição 6 não confere o saldo, porque o Consolidado é atualizado de forma assíncrona. Para
@@ -360,8 +360,8 @@ ver o valor somado, abra a resposta dela e confira `creditsInCents` em `days`.
 2, 3 e 5 dependem dela e mostram um erro claro se forem enviadas antes. A requisição 1 gera uma
 chave nova a cada envio.
 
-**Seguir o lançamento nos logs:** copie o valor de `launchCorrelationId` (variáveis da coleção) e
-rode `docker compose logs --no-log-prefix launchservice consolidationservice | grep <valor>`.
+**Seguir o lançamento nos logs:** copie o valor de `entryCorrelationId` (variáveis da coleção) e
+rode `docker compose logs --no-log-prefix cashflowentryservice consolidationservice | grep <valor>`.
 
 ### O que cada forma de teste cobre
 
@@ -390,28 +390,28 @@ KEY=$(python3 -c 'import uuid; print(uuid.uuid4())')
 CORRELATION_ID="pedido-123-$(date +%s)"   # opcional: sem ele, o serviço gera um
 
 # Registrar um lançamento -> 201
-CREATE=$(curl -s -X POST http://localhost:5101/api/v1/launches \
+CREATE=$(curl -s -X POST http://localhost:5101/api/v1/entries \
   -H "Authorization: Bearer $TOKEN" -H "Idempotency-Key: $KEY" \
   -H "X-Correlation-Id: $CORRELATION_ID" \
   -H "Content-Type: application/json" \
   -d '{"amountInCents":12500,"nature":"Credit","description":"Venda do pedido 123"}')
 echo "$CREATE"
-LAUNCH_ID=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['launchId'])" "$CREATE")
+ENTRY_ID=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['entryId'])" "$CREATE")
 
 # Mesma Idempotency-Key e mesmo corpo -> 200 + cabeçalho Idempotency-Replayed: true
-curl -i -X POST http://localhost:5101/api/v1/launches \
+curl -i -X POST http://localhost:5101/api/v1/entries \
   -H "Authorization: Bearer $TOKEN" -H "Idempotency-Key: $KEY" \
   -H "Content-Type: application/json" \
   -d '{"amountInCents":12500,"nature":"Credit","description":"Venda do pedido 123"}'
 
 # Mesma Idempotency-Key com outro corpo -> 409 idempotency_payload_mismatch
-curl -i -X POST http://localhost:5101/api/v1/launches \
+curl -i -X POST http://localhost:5101/api/v1/entries \
   -H "Authorization: Bearer $TOKEN" -H "Idempotency-Key: $KEY" \
   -H "Content-Type: application/json" \
   -d '{"amountInCents":99999,"nature":"Credit","description":"Venda do pedido 123"}'
 
 # Consultar o lançamento registrado -> 200
-curl -s http://localhost:5101/api/v1/launches/$LAUNCH_ID -H "Authorization: Bearer $TOKEN"; echo
+curl -s http://localhost:5101/api/v1/entries/$ENTRY_ID -H "Authorization: Bearer $TOKEN"; echo
 
 # Consolidado do dia, no fuso de São Paulo (espera 2 s para o evento ser somado) -> 200
 TODAY=$(TZ=America/Sao_Paulo date +%F)
@@ -420,7 +420,7 @@ curl -s "http://localhost:5102/api/v1/consolidation?fromDate=$TODAY&toDate=$TODA
   -H "Authorization: Bearer $TOKEN"; echo
 
 # Seguir o lançamento pelos dois serviços: gravação, publicação no RabbitMQ e soma nos totais
-docker compose logs --no-log-prefix launchservice consolidationservice | grep "$CORRELATION_ID" | sort
+docker compose logs --no-log-prefix cashflowentryservice consolidationservice | grep "$CORRELATION_ID" | sort
 ```
 
 Num ambiente recém-criado, a consulta do Consolidado traz `"creditsInCents":12500`. Como seguir
@@ -436,9 +436,9 @@ administrador do PostgreSQL, que lê os dois bancos.
 
 ```bash
 # 1. Cada lançamento tem a sua mensagem no Outbox
-docker compose exec -T postgres psql -U cashflow -d launch_db -c \
-  "SELECT l.launch_id, l.amount_in_cents, o.status, o.attempt_count
-     FROM launches l JOIN outbox_messages o ON o.aggregate_id = l.launch_id
+docker compose exec -T postgres psql -U cashflow -d cashflow_entry_db -c \
+  "SELECT l.entry_id, l.amount_in_cents, o.status, o.attempt_count
+     FROM cash_flow_entries l JOIN outbox_messages o ON o.aggregate_id = l.entry_id
     ORDER BY l.recorded_at_utc DESC LIMIT 5;"
 
 # 2. Os totais por dia que o Consolidado guarda, e quantos eventos ele já somou
@@ -447,14 +447,14 @@ docker compose exec -T postgres psql -U cashflow -d consolidation_db -c \
    SELECT count(*) AS eventos_aplicados FROM inbox_messages;"
 
 # 3. Cada serviço só acessa o próprio banco: o usuário do Consolidado é barrado no banco de Lançamentos
-docker compose exec -T postgres psql -U consolidation_svc -d launch_db -c "SELECT 1;"
+docker compose exec -T postgres psql -U consolidation_svc -d cashflow_entry_db -c "SELECT 1;"
 ```
 
 | Consulta | Resultado esperado | O que prova |
 |---|---|---|
-| 1 | Uma linha por lançamento, com `status` = `Published`. `attempt_count` conta as tentativas que falharam: `0` em condições normais; maior que `0` para mensagens que esperaram o RabbitMQ voltar. Com o RabbitMQ fora do ar, `status` fica `Pending` ou `Failed` (nova tentativa agendada) | Nenhum lançamento fica sem mensagem. A gravação dos dois numa única transação está em [`RecordLaunchEndpoint.cs`](src/LaunchService/Features/RecordLaunch/RecordLaunchEndpoint.cs) (um único `SaveChangesAsync`) |
+| 1 | Uma linha por lançamento, com `status` = `Published`. `attempt_count` conta as tentativas que falharam: `0` em condições normais; maior que `0` para mensagens que esperaram o RabbitMQ voltar. Com o RabbitMQ fora do ar, `status` fica `Pending` ou `Failed` (nova tentativa agendada) | Nenhum lançamento fica sem mensagem. A gravação dos dois numa única transação está em [`RecordEntryEndpoint.cs`](src/CashFlowEntryService/Features/RecordEntry/RecordEntryEndpoint.cs) (um único `SaveChangesAsync`) |
 | 2 | Os totais de hoje iguais à soma dos lançamentos do dia, e `eventos_aplicados` igual ao número de lançamentos | Cada evento foi somado uma única vez (Inbox) |
-| 3 | `FATAL: permission denied for database "launch_db"` | O isolamento entre os serviços é garantido pelo banco ([ADR-006](docs/adr/ADR-006-isolamento-de-dados.md)) |
+| 3 | `FATAL: permission denied for database "cashflow_entry_db"` | O isolamento entre os serviços é garantido pelo banco ([ADR-006](docs/adr/ADR-006-isolamento-de-dados.md)) |
 
 As tabelas de cada banco estão em [`docs/04-schema-logico.md`](docs/04-schema-logico.md). Para
 comparar todos os dias de uma vez, use `./scripts/ops/reconcile.sh` ([seção 11](#11-operação)).
@@ -480,7 +480,7 @@ TODAY=$(TZ=America/Sao_Paulo date +%F)
 # Registra 5 créditos de R$ 10,00 e imprime o código HTTP de cada um
 registrar_cinco() {
   for i in 1 2 3 4 5; do
-    curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:5101/api/v1/launches \
+    curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:5101/api/v1/entries \
       -H "Authorization: Bearer $TOKEN" \
       -H "Idempotency-Key: $(python3 -c 'import uuid; print(uuid.uuid4())')" \
       -H "Content-Type: application/json" \
@@ -498,7 +498,7 @@ ver_saldo() {
 # Mensagens esperando na fila principal do RabbitMQ (as que o Consolidado ainda não somou)
 ver_fila() {
   docker compose exec -T rabbitmq rabbitmqctl -q list_queues name messages_ready \
-    | grep -E '^consolidation\.launch-recorded\.v1[[:space:]]'
+    | grep -E '^consolidation\.cashflow-entry-recorded\.v1[[:space:]]'
 }
 
 # Mensagens guardadas no Outbox de Lançamentos que ainda não chegaram ao RabbitMQ
@@ -515,9 +515,9 @@ ver_saldo   # anote este valor: é o ponto de partida
 |---|---|---|---|
 | A1 | `docker compose stop consolidationservice` | `Container … Stopped` | O Consolidado está fora do ar |
 | A2 | `registrar_cinco` | `201` cinco vezes | Lançamentos aceitou os 5 registros sem o Consolidado |
-| A3 | `ver_fila` | `consolidation.launch-recorded.v1  5` | As 5 mensagens esperam na fila do RabbitMQ até o Consolidado voltar |
+| A3 | `ver_fila` | `consolidation.cashflow-entry-recorded.v1  5` | As 5 mensagens esperam na fila do RabbitMQ até o Consolidado voltar |
 | A4 | `docker compose up -d --wait consolidationservice` | O terminal volta quando o serviço está saudável | O Consolidado voltou |
-| A5 | `ver_fila` | `consolidation.launch-recorded.v1  0` | O Consolidado leu as 5 mensagens da fila |
+| A5 | `ver_fila` | `consolidation.cashflow-entry-recorded.v1  0` | O Consolidado leu as 5 mensagens da fila |
 | A6 | `ver_saldo` | O valor anotado **+ 5000** | Os 5 lançamentos de R$ 10,00 foram somados, nenhum se perdeu |
 
 Se `ver_fila` ainda mostrar um número maior que 0 no passo A5, espere 2 ou 3 segundos e repita.
@@ -555,13 +555,13 @@ Broker…).
 | Entre B2 e B7 | "Oldest pending age (s)" (Outbox) | Cresce enquanto as mensagens esperam; volta a `0` |
 
 A fila também pode ser vista no painel do RabbitMQ, em http://localhost:15672/#/queues (login
-`cashflow` / `cashflow-dev-only`), coluna **Ready** da fila `consolidation.launch-recorded.v1`,
+`cashflow` / `cashflow-dev-only`), coluna **Ready** da fila `consolidation.cashflow-entry-recorded.v1`,
 durante a parte A.
 
 ### Onde mais isso é testado
 
 O `smoke.sh` repete os dois cenários automaticamente (etapas `nfr001_consolidation_down` e
-`broker_down`), e todos os testes de `LaunchService.IntegrationTests` rodam com o RabbitMQ
+`broker_down`), e todos os testes de `CashFlowEntryService.IntegrationTests` rodam com o RabbitMQ
 inacessível. Os mesmos cenários, com mais verificações, estão em
 [`docs/10-roteiro-de-testes.md` §7](docs/10-roteiro-de-testes.md#7-requisito-de-disponibilidade-nfr-a)
 e [§8](docs/10-roteiro-de-testes.md#8-broker-fora-do-ar).
@@ -595,7 +595,7 @@ RabbitMQ durante o teste. Esperado: uma tabela com 10 etapas, todas `PASS`, e a 
 
 ```bash
 scripts/load/run.sh all              # 2 min de consultas + 2 min de registros, a 50 por segundo
-scripts/load/run.sh launches 15m     # pico completo de registros, 15 minutos
+scripts/load/run.sh entries 15m     # pico completo de registros, 15 minutos
 ```
 
 O script roda o k6 (ferramenta de teste de carga) numa imagem Docker, sem instalação local. No
@@ -609,7 +609,15 @@ Durante o teste, acompanhe no Grafana (escolha "Last 15 minutes"): "Request rate
 fim, os alertas `TargetDown`, `ConsolidationBacklogGrowing` e `ProjectionLagHigh` podem ficar
 pendentes por alguns minutos em http://localhost:9090/alerts e voltar a inativos.
 
-Últimos resultados registrados. Máquina: 10 processadores e 32 GiB de memória, com 7,7 GiB
+Resultados da versão atual, medidos a 50 requisições por segundo durante 2 minutos:
+
+| Cenário | Requisições | Falhas | p95 | p99 | Relatório |
+|---|---:|---:|---:|---:|---|
+| Consulta do Consolidado | 6000 | 0% | 6,68 ms | 10,44 ms | [2026-10-30-consolidation](docs/evidence/load/2026-10-30-consolidation.md) |
+| Registro de lançamentos | 6001 | 0% | 5,87 ms | 7,55 ms | [2026-10-30-entries](docs/evidence/load/2026-10-30-entries.md) |
+
+Resultados históricos registrados antes da renomeação para `CashFlowEntry`; os relatórios preservam
+os nomes e comandos usados na época e não são medições da versão atual. Máquina: 10 processadores e 32 GiB de memória, com 7,7 GiB
 liberados para o Docker. p95 e p99 são os tempos abaixo dos quais ficam 95% e 99% das respostas.
 
 | Cenário | Duração | Requisições | Falhas | p95 | p99 | Relatório |
@@ -692,7 +700,7 @@ não implementadas)
 |---|---|
 | [`docs/01-requisitos-e-assumptions.md`](docs/01-requisitos-e-assumptions.md) | Requisitos funcionais e não funcionais, regras que nunca podem ser violadas, premissas e o que ficou fora do escopo |
 | [`docs/02-capacidades-e-dominios.md`](docs/02-capacidades-e-dominios.md) | Capacidades de negócio, domínios e a fronteira entre eles |
-| [`docs/03-contratos.md`](docs/03-contratos.md) | Contratos das APIs e do evento `LaunchRecorded.v1` |
+| [`docs/03-contratos.md`](docs/03-contratos.md) | Contratos das APIs e do evento `CashFlowEntryRecorded.v1` |
 | [`docs/04-schema-logico.md`](docs/04-schema-logico.md) | Tabelas de cada banco e qual serviço é dono de cada dado |
 | [`docs/05-aspectos-transversais.md`](docs/05-aspectos-transversais.md) | Segurança e modelo de ameaças, resiliência, observabilidade e capacidade |
 | [`docs/06-arquitetura-alvo.md`](docs/06-arquitetura-alvo.md) | Arquitetura de produção: alta disponibilidade, RPO e RTO, escalabilidade, segurança e transição |
@@ -706,10 +714,10 @@ não implementadas)
 
 ```text
 src/
-  LaunchService/             # API de Lançamentos + publicador do Outbox (mesmo processo)
+  CashFlowEntryService/             # API de Lançamentos + publicador do Outbox (mesmo processo)
   ConsolidationService/      # API do Consolidado + consumidor (mesmo processo)
 tests/
-  LaunchService.UnitTests/, LaunchService.IntegrationTests/, LaunchService.OutboxPublisherTests/
+  CashFlowEntryService.UnitTests/, CashFlowEntryService.IntegrationTests/, CashFlowEntryService.OutboxPublisherTests/
   ConsolidationService.UnitTests/, ConsolidationService.IntegrationTests/
   load/                      # cenários do k6
 scripts/

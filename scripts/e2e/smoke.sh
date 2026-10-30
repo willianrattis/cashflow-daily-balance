@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # End-to-end smoke harness against the Docker Compose stack (MR-06 / NFR-A).
 #
-# Automates the proof that LaunchService keeps accepting writes while
+# Automates the proof that CashFlowEntryService keeps accepting writes while
 # ConsolidationService or RabbitMQ are down (docs/10-roteiro-de-testes.md §7 and §8),
 # plus idempotency and payload-mismatch checks already documented in docs/03-contratos.md.
 #
@@ -39,7 +39,7 @@ for arg in "$@"; do
   esac
 done
 
-LAUNCH_BASE="${LAUNCH_BASE:-http://localhost:5101}"
+ENTRY_BASE="${ENTRY_BASE:-http://localhost:5101}"
 CONSOLIDATION_BASE="${CONSOLIDATION_BASE:-http://localhost:5102}"
 RUN_ID="smoke-$(date +%s)"
 TODAY="$(TZ="America/Sao_Paulo" date +%Y-%m-%d)"
@@ -48,8 +48,8 @@ TODAY="$(TZ="America/Sao_Paulo" date +%Y-%m-%d)"
 # publisher/consumer retry path is actually exercised instead of a near-instant restart.
 OUTAGE_SECONDS="${OUTAGE_SECONDS:-15}"
 
-CONSOLIDATION_QUEUE_NAME="consolidation.launch-recorded.v1"
-DLQ_QUEUE_NAME="consolidation.launch-recorded.v1.dlq"
+CONSOLIDATION_QUEUE_NAME="consolidation.cashflow-entry-recorded.v1"
+DLQ_QUEUE_NAME="consolidation.cashflow-entry-recorded.v1.dlq"
 RABBITMQ_MGMT_BASE="${RABBITMQ_MGMT_BASE:-http://localhost:15672}"
 RABBITMQ_MGMT_AUTH="${RABBITMQ_MGMT_AUTH:-cashflow:cashflow-dev-only}"
 
@@ -168,17 +168,17 @@ skip_step() {
 # ---- step implementations ---------------------------------------------------
 
 step_health_ready() {
-  local timeout=90 start elapsed launch_code consolidation_code
+  local timeout=90 start elapsed entry_code consolidation_code
   start=$(date +%s)
   while true; do
-    launch_code=$(curl -s -o /dev/null -w "%{http_code}" "$LAUNCH_BASE/health/ready") || launch_code="000"
+    entry_code=$(curl -s -o /dev/null -w "%{http_code}" "$ENTRY_BASE/health/ready") || entry_code="000"
     consolidation_code=$(curl -s -o /dev/null -w "%{http_code}" "$CONSOLIDATION_BASE/health/ready") || consolidation_code="000"
-    if [ "$launch_code" = "200" ] && [ "$consolidation_code" = "200" ]; then
+    if [ "$entry_code" = "200" ] && [ "$consolidation_code" = "200" ]; then
       return 0
     fi
     elapsed=$(( $(date +%s) - start ))
     if [ "$elapsed" -ge "$timeout" ]; then
-      echo "  timeout: LaunchService /health/ready=$launch_code, ConsolidationService /health/ready=$consolidation_code" >&2
+      echo "  timeout: CashFlowEntryService /health/ready=$entry_code, ConsolidationService /health/ready=$consolidation_code" >&2
       return 1
     fi
     sleep 2
@@ -203,25 +203,25 @@ step_happy_path() {
   DEBIT_IDEM_KEY="smoke-debit-$RUN_ID"
   DEBIT_PAYLOAD="{\"amountInCents\":3000,\"nature\":\"Debit\",\"description\":\"smoke debit\"}"
 
-  http_post "$LAUNCH_BASE/api/v1/launches" "$WRITE_TOKEN" "$CREDIT_IDEM_KEY" "$CREDIT_PAYLOAD"
+  http_post "$ENTRY_BASE/api/v1/entries" "$WRITE_TOKEN" "$CREDIT_IDEM_KEY" "$CREDIT_PAYLOAD"
   if [ "$HTTP_STATUS" != "201" ]; then
     echo "  credit expected 201, got $HTTP_STATUS: $(cat "$BODY_FILE")" >&2
     return 1
   fi
-  CREDIT_LAUNCH_ID=$(json_field "$BODY_FILE" launchId)
+  CREDIT_ENTRY_ID=$(json_field "$BODY_FILE" entryId)
 
-  http_post "$LAUNCH_BASE/api/v1/launches" "$WRITE_TOKEN" "$DEBIT_IDEM_KEY" "$DEBIT_PAYLOAD"
+  http_post "$ENTRY_BASE/api/v1/entries" "$WRITE_TOKEN" "$DEBIT_IDEM_KEY" "$DEBIT_PAYLOAD"
   if [ "$HTTP_STATUS" != "201" ]; then
     echo "  debit expected 201, got $HTTP_STATUS: $(cat "$BODY_FILE")" >&2
     return 1
   fi
-  DEBIT_LAUNCH_ID=$(json_field "$BODY_FILE" launchId)
+  DEBIT_ENTRY_ID=$(json_field "$BODY_FILE" entryId)
 
-  [ -n "$CREDIT_LAUNCH_ID" ] && [ -n "$DEBIT_LAUNCH_ID" ]
+  [ -n "$CREDIT_ENTRY_ID" ] && [ -n "$DEBIT_ENTRY_ID" ]
 }
 
 step_idempotent_replay() {
-  http_post "$LAUNCH_BASE/api/v1/launches" "$WRITE_TOKEN" "$CREDIT_IDEM_KEY" "$CREDIT_PAYLOAD"
+  http_post "$ENTRY_BASE/api/v1/entries" "$WRITE_TOKEN" "$CREDIT_IDEM_KEY" "$CREDIT_PAYLOAD"
   if [ "$HTTP_STATUS" != "200" ]; then
     echo "  replay expected 200, got $HTTP_STATUS: $(cat "$BODY_FILE")" >&2
     return 1
@@ -230,14 +230,14 @@ step_idempotent_replay() {
     echo "  replay missing header Idempotency-Replayed: true. Headers: $(cat "$HEADERS_FILE")" >&2
     return 1
   fi
-  local replayed_launch_id
-  replayed_launch_id=$(json_field "$BODY_FILE" launchId)
-  [ "$replayed_launch_id" = "$CREDIT_LAUNCH_ID" ]
+  local replayed_entry_id
+  replayed_entry_id=$(json_field "$BODY_FILE" entryId)
+  [ "$replayed_entry_id" = "$CREDIT_ENTRY_ID" ]
 }
 
 step_payload_mismatch() {
   local mismatched_payload="{\"amountInCents\":99999,\"nature\":\"Credit\",\"description\":\"smoke credit\"}"
-  http_post "$LAUNCH_BASE/api/v1/launches" "$WRITE_TOKEN" "$CREDIT_IDEM_KEY" "$mismatched_payload"
+  http_post "$ENTRY_BASE/api/v1/entries" "$WRITE_TOKEN" "$CREDIT_IDEM_KEY" "$mismatched_payload"
   if [ "$HTTP_STATUS" != "409" ]; then
     echo "  payload mismatch expected 409, got $HTTP_STATUS: $(cat "$BODY_FILE")" >&2
     return 1
@@ -253,7 +253,7 @@ step_oversized_body_returns_413() {
   local oversized_description
   oversized_description="$(python3 -c "print('e' * 70000)")"
   local payload="{\"amountInCents\":1000,\"nature\":\"Credit\",\"description\":\"$oversized_description\"}"
-  http_post "$LAUNCH_BASE/api/v1/launches" "$WRITE_TOKEN" "smoke-oversized-$RUN_ID" "$payload"
+  http_post "$ENTRY_BASE/api/v1/entries" "$WRITE_TOKEN" "smoke-oversized-$RUN_ID" "$payload"
   if [ "$HTTP_STATUS" != "413" ]; then
     echo "  oversized body expected 413, got $HTTP_STATUS: $(cat "$BODY_FILE")" >&2
     return 1
@@ -305,9 +305,9 @@ step_nfr001_consolidation_down() {
 
   local idem="smoke-credit2-$RUN_ID"
   local payload="{\"amountInCents\":500,\"nature\":\"Credit\",\"description\":\"smoke credit during consolidation outage\"}"
-  http_post "$LAUNCH_BASE/api/v1/launches" "$WRITE_TOKEN" "$idem" "$payload"
+  http_post "$ENTRY_BASE/api/v1/entries" "$WRITE_TOKEN" "$idem" "$payload"
   if [ "$HTTP_STATUS" != "201" ]; then
-    echo "  launch while ConsolidationService was down expected 201, got $HTTP_STATUS: $(cat "$BODY_FILE")" >&2
+    echo "  entry while ConsolidationService was down expected 201, got $HTTP_STATUS: $(cat "$BODY_FILE")" >&2
     docker compose start consolidationservice >/dev/null 2>&1 || true
     CONSOLIDATION_STOPPED=false
     return 1
@@ -339,22 +339,22 @@ step_broker_down() {
 
   local idem="smoke-credit3-$RUN_ID"
   local payload="{\"amountInCents\":100,\"nature\":\"Credit\",\"description\":\"smoke credit during broker outage\"}"
-  http_post "$LAUNCH_BASE/api/v1/launches" "$WRITE_TOKEN" "$idem" "$payload"
+  http_post "$ENTRY_BASE/api/v1/entries" "$WRITE_TOKEN" "$idem" "$payload"
   if [ "$HTTP_STATUS" != "201" ]; then
-    echo "  launch while RabbitMQ was down expected 201, got $HTTP_STATUS: $(cat "$BODY_FILE")" >&2
+    echo "  entry while RabbitMQ was down expected 201, got $HTTP_STATUS: $(cat "$BODY_FILE")" >&2
     docker compose start rabbitmq >/dev/null 2>&1 || true
     RABBITMQ_STOPPED=false
     return 1
   fi
-  local launch_id
-  launch_id=$(json_field "$BODY_FILE" launchId)
+  local entry_id
+  entry_id=$(json_field "$BODY_FILE" entryId)
 
   echo "  keeping RabbitMQ down for ${OUTAGE_SECONDS}s so the Outbox Publisher retries..." >&2
   sleep "$OUTAGE_SECONDS"
 
   local outbox_row outbox_status outbox_attempts
-  outbox_row=$(docker compose exec -T postgres psql -U cashflow -d launch_db -t -A \
-    -c "SELECT status || '|' || attempt_count FROM outbox_messages WHERE aggregate_id = '$launch_id';" 2>/dev/null) || outbox_row=""
+  outbox_row=$(docker compose exec -T postgres psql -U cashflow -d cashflow_entry_db -t -A \
+    -c "SELECT status || '|' || attempt_count FROM outbox_messages WHERE aggregate_id = '$entry_id';" 2>/dev/null) || outbox_row=""
   outbox_status="${outbox_row%%|*}"
   outbox_attempts="${outbox_row##*|}"
 
@@ -382,8 +382,8 @@ step_broker_down() {
 # observability/prometheus/alerts.yml DeadLetterQueueNotEmpty, dlq_messages_total): no
 # default smoke step above produces a dead-lettered message, since outages only delay
 # delivery, they never reject it. Publishes malformed body straight to the broker (bypassing
-# the LaunchService API, the same way tests/ConsolidationService.IntegrationTests/ConsumerTests.cs
-# does) so LaunchRecordedConsumerService.IsValid rejects it on first delivery, then removes the
+# the CashFlowEntryService API, the same way tests/ConsolidationService.IntegrationTests/ConsumerTests.cs
+# does) so CashFlowEntryRecordedConsumerService.IsValid rejects it on first delivery, then removes the
 # one message it created so the queue/alert do not stay dirty after the run.
 step_dlq_rejected_message() {
   local dlq_depth_before dlq_depth_after start elapsed publish_status
@@ -394,7 +394,7 @@ step_dlq_rejected_message() {
   publish_status=$(curl -s -o /dev/null -w "%{http_code}" -u "$RABBITMQ_MGMT_AUTH" \
     -X POST "$RABBITMQ_MGMT_BASE/api/exchanges/%2F/cashflow.events/publish" \
     -H "Content-Type: application/json" \
-    -d "{\"properties\":{},\"routing_key\":\"launch.recorded.v1\",\"payload\":\"smoke-dlq-not-json-$RUN_ID\",\"payload_encoding\":\"string\"}") \
+    -d "{\"properties\":{},\"routing_key\":\"cashflow.entry.recorded.v1\",\"payload\":\"smoke-dlq-not-json-$RUN_ID\",\"payload_encoding\":\"string\"}") \
     || publish_status="000"
   if [ "$publish_status" != "200" ]; then
     echo "  publish to cashflow.events via management API expected 200, got $publish_status" >&2
@@ -437,15 +437,15 @@ step_durability_restart() {
 
   local idem="smoke-durability-$RUN_ID"
   local payload="{\"amountInCents\":50,\"nature\":\"Credit\",\"description\":\"smoke credit before compose down/up\"}"
-  http_post "$LAUNCH_BASE/api/v1/launches" "$WRITE_TOKEN" "$idem" "$payload"
+  http_post "$ENTRY_BASE/api/v1/entries" "$WRITE_TOKEN" "$idem" "$payload"
   if [ "$HTTP_STATUS" != "201" ]; then
-    echo "  launch before compose down/up expected 201, got $HTTP_STATUS: $(cat "$BODY_FILE")" >&2
+    echo "  entry before compose down/up expected 201, got $HTTP_STATUS: $(cat "$BODY_FILE")" >&2
     docker compose start consolidationservice >/dev/null 2>&1 || true
     CONSOLIDATION_STOPPED=false
     return 1
   fi
-  local launch_id
-  launch_id=$(json_field "$BODY_FILE" launchId)
+  local entry_id
+  entry_id=$(json_field "$BODY_FILE" entryId)
 
   # Prove the message is actually sitting in RabbitMQ (not just pending in the
   # Outbox) before tearing the stack down: a message
@@ -456,8 +456,8 @@ step_durability_restart() {
   confirmed=false
   wait_start=$(date +%s)
   while true; do
-    outbox_status=$(docker compose exec -T postgres psql -U cashflow -d launch_db -t -A \
-      -c "SELECT status FROM outbox_messages WHERE aggregate_id = '$launch_id';" 2>/dev/null | tr -d '[:space:]') || outbox_status=""
+    outbox_status=$(docker compose exec -T postgres psql -U cashflow -d cashflow_entry_db -t -A \
+      -c "SELECT status FROM outbox_messages WHERE aggregate_id = '$entry_id';" 2>/dev/null | tr -d '[:space:]') || outbox_status=""
     main_queue_depth=$(docker compose exec -T rabbitmq rabbitmqctl -q list_queues name messages 2>/dev/null \
       | awk -v q="$CONSOLIDATION_QUEUE_NAME" '$1 == q {print $2}') || main_queue_depth=""
 
@@ -533,7 +533,7 @@ echo
 
 run_step "health_ready" step_health_ready
 
-WRITE_TOKEN="$(python3 scripts/dev-jwt/make_token.py --scope cashflow.launches.write)"
+WRITE_TOKEN="$(python3 scripts/dev-jwt/make_token.py --scope cashflow.entries.write)"
 READ_TOKEN="$(python3 scripts/dev-jwt/make_token.py --scope cashflow.consolidation.read)"
 
 run_step "capture_baseline" step_capture_baseline

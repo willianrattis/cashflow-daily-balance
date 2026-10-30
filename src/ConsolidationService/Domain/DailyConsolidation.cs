@@ -2,8 +2,8 @@ namespace ConsolidationService.Domain;
 
 /// <summary>
 /// Persisted projection of the daily totals (ADR-005). Never the source of truth —
-/// derived additively from `LaunchRecorded.v1` events, and safely rebuildable from the
-/// LaunchService's immutable ledger.
+/// derived additively from `CashFlowEntryRecorded.v1` events, and safely rebuildable from the
+/// CashFlowEntryService's immutable ledger.
 /// </summary>
 public sealed class DailyConsolidation
 {

@@ -1,5 +1,5 @@
 # Local reference topology (docs/diagrams/svg/Deployment-Local.svg). One PostgreSQL server hosts two
-# logical databases (launch_db, consolidation_db) with no cross-service table access; RabbitMQ is
+# logical databases (cashflow_entry_db, consolidation_db) with no cross-service table access; RabbitMQ is
 # the transport, never the source of truth (ADR-001, ADR-002, ADR-006).
 #
 # All credentials/keys below are throwaway local-dev values, documented here on purpose
@@ -11,10 +11,10 @@ services:
     environment:
       POSTGRES_USER: cashflow
       POSTGRES_PASSWORD: cashflow-dev-only
-      POSTGRES_DB: launch_db
+      POSTGRES_DB: cashflow_entry_db
       # Non-superuser, least-privilege roles each service connects with (docs/05 §1).
       # cashflow (above) stays a superuser for scripts/ops/* and scripts/postgres/*.
-      LAUNCH_SVC_PASSWORD: launch-svc-dev-only
+      CASHFLOW_ENTRY_SVC_PASSWORD: entry-svc-dev-only
       CONSOLIDATION_SVC_PASSWORD: consolidation-svc-dev-only
     ports:
       - "5433:5432" # host 5433 to avoid clashing with a locally installed/other-project PostgreSQL on 5432
@@ -22,7 +22,7 @@ services:
       - postgres-data:/var/lib/postgresql/data
       - ./scripts/postgres/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U cashflow -d launch_db"]
+      test: ["CMD-SHELL", "pg_isready -U cashflow -d cashflow_entry_db"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -50,15 +50,15 @@ services:
       timeout: 5s
       retries: 10
 
-  launchservice:
+  cashflowentryservice:
     build:
       context: .
-      dockerfile: src/LaunchService/Dockerfile
+      dockerfile: src/CashFlowEntryService/Dockerfile
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       # Maximum Pool Size=40 in both services: 40 + 40 stays below the 97 non-superuser slots of
       # PostgreSQL's max_connections=100, leaving room for migrations and scripts/ops (docs/01 A-029).
-      ConnectionStrings__LaunchDb: "Host=postgres;Port=5432;Database=launch_db;Username=launch_svc;Password=launch-svc-dev-only;Maximum Pool Size=40"
+      ConnectionStrings__CashFlowEntryDb: "Host=postgres;Port=5432;Database=cashflow_entry_db;Username=cashflow_entry_svc;Password=entry-svc-dev-only;Maximum Pool Size=40"
       RabbitMq__HostName: rabbitmq
       RabbitMq__Port: "5672"
       RabbitMq__UserName: cashflow
@@ -72,7 +72,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      # No rabbitmq entry here on purpose (NFR-A): LaunchService must come up healthy on a cold
+      # No rabbitmq entry here on purpose (NFR-A): CashFlowEntryService must come up healthy on a cold
       # start even with the broker down, so its own readiness can never wait on it.
 
   consolidationservice:
@@ -107,7 +107,7 @@ services:
     ports:
       - "9090:9090"
     depends_on:
-      - launchservice
+      - cashflowentryservice
       - consolidationservice
 
   grafana:

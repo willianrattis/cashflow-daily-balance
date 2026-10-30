@@ -77,8 +77,8 @@
                   "pm.test('201 Created', () => pm.response.to.have.status(201));",
                   "",
                   "const body = pm.response.json();",
-                  "pm.test('devolve launchId e businessDate', () => {",
-                  "    pm.expect(body.launchId).to.be.a('string').and.not.empty;",
+                  "pm.test('devolve entryId e businessDate', () => {",
+                  "    pm.expect(body.entryId).to.be.a('string').and.not.empty;",
                   "    pm.expect(body.businessDate).to.match(/^\\d{4}-\\d{2}-\\d{2}$/);",
                   "    pm.expect(body.amountInCents).to.eql(12500);",
                   "    pm.expect(body.nature).to.eql('Credit');",
@@ -88,11 +88,11 @@
                   "    pm.expect(body.correlationId).to.eql(pm.request.headers.get('X-Correlation-Id'));",
                   "});",
                   "",
-                  "pm.collectionVariables.set('launchId', body.launchId);",
+                  "pm.collectionVariables.set('entryId', body.entryId);",
                   "pm.collectionVariables.set('businessDate', body.businessDate);",
                   "// Guarda o X-Correlation-Id deste registro: é o que aparece nos logs dos dois serviços.",
-                  "pm.collectionVariables.set('launchCorrelationId', body.correlationId);",
-                  "console.log('correlationId=' + body.correlationId + ' launchId=' + body.launchId);"
+                  "pm.collectionVariables.set('entryCorrelationId', body.correlationId);",
+                  "console.log('correlationId=' + body.correlationId + ' entryId=' + body.entryId);"
                 ]
               }
             }
@@ -119,17 +119,17 @@
               }
             },
             "url": {
-              "raw": "{{launchBaseUrl}}/api/v1/launches",
+              "raw": "{{entryBaseUrl}}/api/v1/entries",
               "host": [
-                "{{launchBaseUrl}}"
+                "{{entryBaseUrl}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "launches"
+                "entries"
               ]
             },
-            "description": "Registra um crédito de R$ 125,00 com uma Idempotency-Key nova. Guarda launchId e businessDate para as próximas requisições."
+            "description": "Registra um crédito de R$ 125,00 com uma Idempotency-Key nova. Guarda entryId e businessDate para as próximas requisições."
           }
         },
         {
@@ -156,8 +156,8 @@
                   "pm.test('cabeçalho Idempotency-Replayed: true', () => {",
                   "    pm.expect(pm.response.headers.get('Idempotency-Replayed')).to.eql('true');",
                   "});",
-                  "pm.test('mesmo launchId do registro original', () => {",
-                  "    pm.expect(pm.response.json().launchId).to.eql(pm.collectionVariables.get('launchId'));",
+                  "pm.test('mesmo entryId do registro original', () => {",
+                  "    pm.expect(pm.response.json().entryId).to.eql(pm.collectionVariables.get('entryId'));",
                   "});"
                 ]
               }
@@ -185,14 +185,14 @@
               }
             },
             "url": {
-              "raw": "{{launchBaseUrl}}/api/v1/launches",
+              "raw": "{{entryBaseUrl}}/api/v1/entries",
               "host": [
-                "{{launchBaseUrl}}"
+                "{{entryBaseUrl}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "launches"
+                "entries"
               ]
             },
             "description": "Reenvia a mesma Idempotency-Key com o mesmo corpo: o serviço devolve o lançamento original, sem criar outro."
@@ -223,8 +223,8 @@
                   "pm.test('code = idempotency_payload_mismatch', () => {",
                   "    pm.expect(body.code).to.eql('idempotency_payload_mismatch');",
                   "});",
-                  "pm.test('details.launchId aponta para o lançamento original', () => {",
-                  "    pm.expect(body.details.launchId).to.eql(pm.collectionVariables.get('launchId'));",
+                  "pm.test('details.entryId aponta para o lançamento original', () => {",
+                  "    pm.expect(body.details.entryId).to.eql(pm.collectionVariables.get('entryId'));",
                   "});"
                 ]
               }
@@ -252,14 +252,14 @@
               }
             },
             "url": {
-              "raw": "{{launchBaseUrl}}/api/v1/launches",
+              "raw": "{{entryBaseUrl}}/api/v1/entries",
               "host": [
-                "{{launchBaseUrl}}"
+                "{{entryBaseUrl}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "launches"
+                "entries"
               ]
             },
             "description": "Reenvia a mesma Idempotency-Key com outro valor: o serviço recusa, porque a chave já pertence a outra operação."
@@ -299,14 +299,14 @@
               }
             },
             "url": {
-              "raw": "{{launchBaseUrl}}/api/v1/launches",
+              "raw": "{{entryBaseUrl}}/api/v1/entries",
               "host": [
-                "{{launchBaseUrl}}"
+                "{{entryBaseUrl}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "launches"
+                "entries"
               ]
             },
             "description": "Sem o cabeçalho Idempotency-Key, o registro é recusado."
@@ -321,8 +321,8 @@
                 "type": "text/javascript",
                 "exec": [
                   "// Depende de 'Registrar lançamento (201)': sem ele, a variável fica vazia e a API responderia 400 ou 404.",
-                  "if (!pm.collectionVariables.get('launchId')) {",
-                  "    throw new Error(\"Variável launchId vazia: envie primeiro 'Registrar lançamento (201)' com o ambiente 'cashflow local' selecionado, na mesma coleção.\");",
+                  "if (!pm.collectionVariables.get('entryId')) {",
+                  "    throw new Error(\"Variável entryId vazia: envie primeiro 'Registrar lançamento (201)' com o ambiente 'cashflow local' selecionado, na mesma coleção.\");",
                   "}"
                 ]
               }
@@ -334,8 +334,8 @@
                 "exec": [
                   "pm.test('200 OK', () => pm.response.to.have.status(200));",
                   "const body = pm.response.json();",
-                  "pm.test('launchId confere', () => {",
-                  "    pm.expect(body.launchId).to.eql(pm.collectionVariables.get('launchId'));",
+                  "pm.test('entryId confere', () => {",
+                  "    pm.expect(body.entryId).to.eql(pm.collectionVariables.get('entryId'));",
                   "});",
                   "pm.test('valor e natureza conferem', () => {",
                   "    pm.expect(body.amountInCents).to.eql(12500);",
@@ -349,15 +349,15 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{launchBaseUrl}}/api/v1/launches/{{launchId}}",
+              "raw": "{{entryBaseUrl}}/api/v1/entries/{{entryId}}",
               "host": [
-                "{{launchBaseUrl}}"
+                "{{entryBaseUrl}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "launches",
-                "{{launchId}}"
+                "entries",
+                "{{entryId}}"
               ]
             },
             "description": "Consulta o lançamento registrado no primeiro passo."
@@ -450,7 +450,7 @@
       "type": "string"
     },
     {
-      "key": "launchCorrelationId",
+      "key": "entryCorrelationId",
       "value": "",
       "type": "string"
     },
@@ -460,7 +460,7 @@
       "type": "string"
     },
     {
-      "key": "launchId",
+      "key": "entryId",
       "value": "",
       "type": "string"
     },

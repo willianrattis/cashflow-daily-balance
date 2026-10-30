@@ -3,9 +3,9 @@ namespace ConsolidationService.IntegrationTests.Infrastructure;
 /// <summary>
 /// Shared across the whole integration test collection: a real PostgreSQL container and a real
 /// RabbitMQ container (Testcontainers), plus one in-process
-/// <see cref="WebApplicationFactory{TEntryPoint}"/> so the actual <c>LaunchRecordedConsumerService</c>
+/// <see cref="WebApplicationFactory{TEntryPoint}"/> so the actual <c>CashFlowEntryRecordedConsumerService</c>
 /// hosted service runs and consumes from the real broker — these tests publish events directly to
-/// the shared exchange, exactly like LaunchService's Outbox Publisher would, and assert on the
+/// the shared exchange, exactly like CashFlowEntryService's Outbox Publisher would, and assert on the
 /// resulting projection.
 /// </summary>
 public sealed class ConsolidationServiceTestFixture : WebApplicationFactory<Program>, IAsyncLifetime
@@ -62,8 +62,8 @@ public sealed class ConsolidationServiceTestFixture : WebApplicationFactory<Prog
         builder.ConfigureTestServices(services =>
         {
             services.AddSingleton<ProjectorFaultController>();
-            services.AddScoped<ILaunchRecordedProjector>(sp => new FaultInjectingProjector(
-                new LaunchRecordedProjector(sp.GetRequiredService<ConsolidationDbContext>()),
+            services.AddScoped<ICashFlowEntryRecordedProjector>(sp => new FaultInjectingProjector(
+                new CashFlowEntryRecordedProjector(sp.GetRequiredService<ConsolidationDbContext>()),
                 sp.GetRequiredService<ProjectorFaultController>()));
         });
     }

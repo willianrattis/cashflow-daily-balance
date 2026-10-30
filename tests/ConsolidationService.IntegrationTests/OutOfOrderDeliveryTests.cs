@@ -3,7 +3,7 @@ namespace ConsolidationService.IntegrationTests;
 /// <summary>
 /// The projection is additive by business date (ADR-005, ADR-008), so arrival order can never
 /// corrupt a daily total — but `projection_metadata.last_applied_event_recorded_at_utc` is a
-/// plain "last write wins" column (<see cref="LaunchRecordedProjector"/>'s raw SQL upsert), not a
+/// plain "last write wins" column (<see cref="CashFlowEntryRecordedProjector"/>'s raw SQL upsert), not a
 /// running maximum: it reflects whichever event was *applied* most recently, which under
 /// out-of-order delivery is not necessarily the one with the latest `recordedAtUtc` (A-0xx,
 /// docs/01-requisitos-e-assumptions.md). This test locks in both halves of that trade-off.
@@ -18,23 +18,23 @@ public class OutOfOrderDeliveryTests(ConsolidationServiceTestFixture fixture)
         var laterDate = earlierDate.AddDays(1);
         var baseline = DateTime.UtcNow;
 
-        var olderEvent = new LaunchRecordedEnvelope(
+        var olderEvent = new CashFlowEntryRecordedEnvelope(
             EventId: Guid.NewGuid(),
-            EventType: LaunchRecordedEnvelope.SupportedEventType,
-            EventVersion: LaunchRecordedEnvelope.SupportedVersion,
+            EventType: CashFlowEntryRecordedEnvelope.SupportedEventType,
+            EventVersion: CashFlowEntryRecordedEnvelope.SupportedVersion,
             OccurredAtUtc: baseline,
             CorrelationId: "out-of-order-test",
             CausationId: "out-of-order-test",
-            Payload: new LaunchRecordedPayload(Guid.NewGuid(), 1_000, "Credit", earlierDate, baseline));
+            Payload: new CashFlowEntryRecordedPayload(Guid.NewGuid(), 1_000, "Credit", earlierDate, baseline));
 
-        var newerEvent = new LaunchRecordedEnvelope(
+        var newerEvent = new CashFlowEntryRecordedEnvelope(
             EventId: Guid.NewGuid(),
-            EventType: LaunchRecordedEnvelope.SupportedEventType,
-            EventVersion: LaunchRecordedEnvelope.SupportedVersion,
+            EventType: CashFlowEntryRecordedEnvelope.SupportedEventType,
+            EventVersion: CashFlowEntryRecordedEnvelope.SupportedVersion,
             OccurredAtUtc: baseline.AddSeconds(30),
             CorrelationId: "out-of-order-test",
             CausationId: "out-of-order-test",
-            Payload: new LaunchRecordedPayload(Guid.NewGuid(), 2_000, "Debit", laterDate, baseline.AddSeconds(30)));
+            Payload: new CashFlowEntryRecordedPayload(Guid.NewGuid(), 2_000, "Debit", laterDate, baseline.AddSeconds(30)));
 
         // Apply the NEWER event first, then the OLDER one — the redelivery/retry/replay paths
         // (ADR-002, docs/diagrams/08-sequence-dlq-replay.md) never guarantee the opposite.
@@ -62,10 +62,10 @@ public class OutOfOrderDeliveryTests(ConsolidationServiceTestFixture fixture)
             "lastAppliedEventRecordedAtUtc deveria ter regredido após a entrega fora de ordem.");
     }
 
-    private async Task<ProjectionOutcome> ProjectDirectlyAsync(LaunchRecordedEnvelope envelope)
+    private async Task<ProjectionOutcome> ProjectDirectlyAsync(CashFlowEntryRecordedEnvelope envelope)
     {
         using var scope = fixture.Services.CreateScope();
-        var projector = scope.ServiceProvider.GetRequiredService<ILaunchRecordedProjector>();
+        var projector = scope.ServiceProvider.GetRequiredService<ICashFlowEntryRecordedProjector>();
         return await projector.ProjectAsync(envelope, CancellationToken.None);
     }
 }

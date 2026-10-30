@@ -6,10 +6,10 @@ rule_files:
   - /etc/prometheus/alerts.yml
 
 scrape_configs:
-  - job_name: launchservice
+  - job_name: cashflowentryservice
     metrics_path: /metrics
     static_configs:
-      - targets: ["launchservice:8080"]
+      - targets: ["cashflowentryservice:8080"]
 
   - job_name: consolidationservice
     metrics_path: /metrics

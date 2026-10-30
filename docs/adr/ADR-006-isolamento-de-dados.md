@@ -18,7 +18,7 @@ Decidimos que cada serviço se conecta ao PostgreSQL com um usuário de banco pr
 sem privilégio de administrador e com acesso só ao banco do próprio serviço, porque assim o
 isolamento é garantido pelo banco, e não pela disciplina do código.
 
-- `launch_svc` é dono de `launch_db` (Lançamentos); `consolidation_svc` é dono de
+- `cashflow_entry_svc` é dono de `cashflow_entry_db` (Lançamentos); `consolidation_svc` é dono de
   `consolidation_db` (Consolidado).
 - Por padrão, o PostgreSQL deixa qualquer usuário se conectar a qualquer banco. O script
   `scripts/postgres/init-databases.sh` retira essa permissão dos dois bancos e a devolve só ao

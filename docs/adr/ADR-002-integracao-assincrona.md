@@ -18,7 +18,7 @@ que guarda as mensagens e as entrega ao destino), porque assim Lançamentos não
 Consolidado: grava, deixa a mensagem para entrega e responde ao cliente, mesmo com o
 Consolidado fora do ar.
 
-- Lançamentos publica o evento `LaunchRecorded.v1` ("lançamento registrado", versão 1). O
+- Lançamentos publica o evento `CashFlowEntryRecorded.v1` ("lançamento registrado", versão 1). O
   Consolidado o lê de uma fila durável, que sobrevive a um reinício do broker.
 - O broker é o RabbitMQ, que oferece de forma simples o que precisamos: filas, confirmação de
   processamento, novas tentativas e DLQ (Dead Letter Queue, fila das mensagens que não puderam
@@ -101,4 +101,4 @@ NFR-001 (o Consolidado fora do ar não derruba Lançamentos; refina o NFR-A); NF
 requisições por segundo no Consolidado); NFR-005 (Consolidado até alguns segundos atrás);
 NFR-010 (nenhuma mensagem pendente expira sem aviso); NFR-014 (metas de tempo de recuperação).
 Texto completo em [`docs/01-requisitos-e-assumptions.md`](../01-requisitos-e-assumptions.md);
-formato do evento no [contrato do evento](../03-contratos.md#evento-launchrecordedv1).
+formato do evento no [contrato do evento](../03-contratos.md#evento-entryrecordedv1).

@@ -21,35 +21,35 @@ principais possíveis.
 
 ```mermaid
 flowchart LR
-    launchCap["Launch Management (principal)<br/>Registrar crédito ou débito · evitar duplicatas ·<br/>corrigir com lançamento oposto · nunca alterar"]
+    entryCap["Cash Flow Entry Management (principal)<br/>Registrar crédito ou débito · evitar duplicatas ·<br/>corrigir com lançamento oposto · nunca alterar"]
     consolidationCap["Daily Consolidation (principal)<br/>Receber eventos · somar os totais do dia ·<br/>consultar um intervalo · reconstruir"]
     identityCap["Identidade e acesso (suporte)"]
     integrationCap["Integração e mensageria (suporte)"]
     observabilityCap["Observabilidade (suporte)"]
     operationsCap["Operação (suporte)<br/>scripts executados por um operador:<br/>reconcile · replay-dlq · rebuild<br/>credencial de administrador, fora das APIs"]
 
-    launchBC["Bounded context<br/>Launch Management"]
+    entryBC["Bounded context<br/>Cash Flow Entry Management"]
     consolidationBC["Bounded context<br/>Daily Consolidation"]
 
-    launchSvc[["LaunchService"]]
+    entrySvc[["CashFlowEntryService"]]
     consolidationSvc[["ConsolidationService"]]
 
-    launchDb[("Launch DB")]
+    cashFlowEntryDb[("Cash Flow Entry DB")]
     consolidationDb[("Consolidation DB")]
 
-    launchCap --> launchBC --> launchSvc
+    entryCap --> entryBC --> entrySvc
     consolidationCap --> consolidationBC --> consolidationSvc
 
-    launchSvc -->|fonte da verdade| launchDb
+    entrySvc -->|fonte da verdade| cashFlowEntryDb
     consolidationSvc -->|cópia derivada, reconstruível| consolidationDb
 
-    identityCap -. protege .-> launchSvc
+    identityCap -. protege .-> entrySvc
     identityCap -. protege .-> consolidationSvc
-    integrationCap -. separa as falhas de .-> launchSvc
+    integrationCap -. separa as falhas de .-> entrySvc
     integrationCap -. separa as falhas de .-> consolidationSvc
-    observabilityCap -. observa .-> launchSvc
+    observabilityCap -. observa .-> entrySvc
     observabilityCap -. observa .-> consolidationSvc
-    operationsCap -. usuário administrador .-> launchDb
+    operationsCap -. usuário administrador .-> cashFlowEntryDb
     operationsCap -. usuário administrador .-> consolidationDb
 ```
 
@@ -61,22 +61,22 @@ e consultar continuam funcionando.
 
 | Capacidade | Tipo e criticidade | Valor que gera | Por quê |
 |---|---|---|---|
-| Launch Management (gestão de lançamentos) | Principal, P0 | Registro confiável de cada crédito e débito. Sem ele, não há fluxo de caixa a controlar. | É o BR-01 (requisito de negócio do PDF: "Serviço que faça o controle de lançamentos"). Se parar, o produto para — e é exatamente esta capacidade que o NFR-001 protege (o Consolidado fora do ar não derruba Lançamentos). |
+| Cash Flow Entry Management (gestão de lançamentos) | Principal, P0 | Registro confiável de cada crédito e débito. Sem ele, não há fluxo de caixa a controlar. | É o BR-01 (requisito de negócio do PDF: "Serviço que faça o controle de lançamentos"). Se parar, o produto para — e é exatamente esta capacidade que o NFR-001 protege (o Consolidado fora do ar não derruba Lançamentos). |
 | Daily Consolidation (consolidação diária) | Principal, P1 | Mostra ao comerciante o saldo consolidado de cada dia, para ele decidir. | É o BR-02 (requisito de negócio do PDF: "relatório que disponibilize o saldo diário consolidado"). É consultada, e não é onde o dado nasce; por isso tolera alguns segundos de atraso (consistência eventual, ADR-005, decisão sobre o Consolidado) sem afetar o registro. |
 | Identidade e acesso | Suporte, P1 | Garante que só quem se autenticou e tem permissão veja ou registre dados. | Sem autenticação e autorização — parte do OBJ-05 (critério de avaliação do PDF: segurança) —, as duas capacidades principais perdem a garantia de integridade que um produto financeiro exige. |
-| Integração e mensageria | Suporte, P1 | Deixa Launch Management e Daily Consolidation evoluírem e falharem de forma independente. | É o que torna o NFR-001 possível: o Outbox (a mensagem gravada junto com o lançamento), novas tentativas e DLQ (Dead Letter Queue, fila das mensagens que não puderam ser processadas). Sem ela, separar os dois serviços perderia o sentido. |
+| Integração e mensageria | Suporte, P1 | Deixa Cash Flow Entry Management e Daily Consolidation evoluírem e falharem de forma independente. | É o que torna o NFR-001 possível: o Outbox (a mensagem gravada junto com o lançamento), novas tentativas e DLQ (Dead Letter Queue, fila das mensagens que não puderam ser processadas). Sem ela, separar os dois serviços perderia o sentido. |
 | Observabilidade | Suporte, P2 | Mostra, com números, se as capacidades principais cumprem suas metas — os SLOs (Service Level Objectives, metas internas de nível de serviço) — e avisa quando algo falha. | Atende ao OBJ-04 (critério de avaliação: resiliência, com monitoramento proativo) e ao OBJ-08 (critério de avaliação: métricas e metas claras). É P2 porque, se ela parar, registrar e consultar continuam funcionando. |
 | Operação | Suporte, P2 | Verifica e corrige o Consolidado quando ele diverge dos lançamentos: compara os totais, reenvia mensagens da DLQ e reconstrói os totais do zero. | Atende ao FR-007 e ao NFR-009 (requisitos refinados em `docs/01`: o Consolidado pode ser reconstruído a partir dos lançamentos). São scripts executados à mão por um operador, fora do caminho das requisições, com credenciais de administrador — e não com uma permissão (scope) de API. |
 
 ## Contextos delimitados (bounded contexts)
 
-### Launch Management
+### Cash Flow Entry Management
 
 É o contexto oficial dos lançamentos: o único que pode criar um registro financeiro. Ele é dono
 do ciclo de vida do lançamento e da `Idempotency-Key`, o identificador que o cliente envia para
 que repetir uma requisição não crie um segundo lançamento.
 
-Implementado em: `LaunchService` e o banco dele.
+Implementado em: `CashFlowEntryService` e o banco dele.
 
 ### Daily Consolidation
 
@@ -96,7 +96,7 @@ ela não é uma regra do cálculo do saldo.
 
 ### Integração e mensageria
 
-Entrega o evento `LaunchRecorded` de Lançamentos ao Consolidado sem perdê-lo, mesmo com falhas.
+Entrega o evento `CashFlowEntryRecorded` de Lançamentos ao Consolidado sem perdê-lo, mesmo com falhas.
 Usa o Outbox, novas tentativas, o ACK (acknowledgement: o Consolidado só confirma o
 recebimento depois de gravar), a Inbox e a DLQ. O broker — o servidor de mensagens, aqui o
 RabbitMQ — transporta a mensagem, mas não substitui a fonte da verdade, que é a tabela de
@@ -121,29 +121,29 @@ requisição de API. Quando usar cada um, e o passo a passo, está em
 |---|---|
 | `scripts/ops/reconcile.sh` | Soma, por dia, os créditos e os débitos da tabela de lançamentos e compara com os totais do Consolidado. Só lê; se algum dia divergir, mostra a diferença e termina com erro. |
 | `scripts/ops/replay-dlq.sh` | Devolve à fila principal as mensagens que estão na DLQ, usando um shovel (recurso do RabbitMQ que transfere mensagens de uma fila para outra). |
-| `scripts/ops/rebuild-consolidation.sh` | Apaga e recalcula os totais do Consolidado: a tarefa de `LaunchService` que publica o Outbox (o publisher) envia de novo todas as mensagens guardadas. Nunca altera a tabela `launches`. |
+| `scripts/ops/rebuild-consolidation.sh` | Apaga e recalcula os totais do Consolidado: a tarefa de `CashFlowEntryService` que publica o Outbox (o publisher) envia de novo todas as mensagens guardadas. Nunca altera a tabela `cash_flow_entries`. |
 
 Os scripts usam credenciais de administrador — do banco em `reconcile.sh` e
 `rebuild-consolidation.sh`, do RabbitMQ em `replay-dlq.sh` — porque precisam agir sobre os dois
 serviços a partir de um só lugar. Os serviços, ao contrário, se conectam com usuários de banco que
 só acessam o próprio banco ([`docs/05-aspectos-transversais.md`](05-aspectos-transversais.md)
 §1). A Operação é a única capacidade que cruza de propósito a fronteira entre Lançamentos e
-Consolidado: o rebuild altera o Outbox de `launch_db`, mas só os campos que controlam a
-publicação — nunca a tabela `launches`, que é a fonte da verdade.
+Consolidado: o rebuild altera o Outbox de `cashflow_entry_db`, mas só os campos que controlam a
+publicação — nunca a tabela `cash_flow_entries`, que é a fonte da verdade.
 
 ## Mapa de contextos (context map)
 
 O mapa mostra o que cada contexto fornece aos outros.
 
 ```text
-Launch Management
-   └── publica LaunchRecorded ──> Integração e mensageria
+Cash Flow Entry Management
+   └── publica CashFlowEntryRecorded ──> Integração e mensageria
                                       └── entrega ──> Daily Consolidation
 
-Provedor de identidade ── tokens ──> LaunchService e ConsolidationService
-Observabilidade        <── sinais ── LaunchService, Broker e ConsolidationService
+Provedor de identidade ── tokens ──> CashFlowEntryService e ConsolidationService
+Observabilidade        <── sinais ── CashFlowEntryService, Broker e ConsolidationService
 Operação (scripts de um operador, com credencial de administrador, fora das APIs)
-   ├── marca o Outbox como pendente ──> Launch DB
+   ├── marca o Outbox como pendente ──> Cash Flow Entry DB
    └── reconstrói os totais ──> Consolidation DB
 ```
 

@@ -36,8 +36,8 @@ e erros.
   `OutboxStale` (mensagem parada no Outbox), `ProjectionLagHigh` (Consolidado atrasado),
   `DeadLetterQueueNotEmpty` (mensagem na Dead Letter Queue, a fila das mensagens que não
   puderam ser processadas), `ConsolidationBacklogGrowing` (fila do Consolidado crescendo),
-  `LaunchServiceErrors` e `ConsolidationServiceErrors` (erros nas APIs), `TargetDown` (um dos
-  três endereços não responde), `LaunchLatencyHigh` e `ConsolidationLatencyHigh` (APIs acima da
+  `CashFlowEntryServiceErrors` e `ConsolidationServiceErrors` (erros nas APIs), `TargetDown` (um dos
+  três endereços não responde), `CashFlowEntryLatencyHigh` e `ConsolidationLatencyHigh` (APIs acima da
   meta de tempo de resposta).
 - **Verificações de saúde.** `/health/live` diz se o processo está vivo. `/health/ready` testa só
   o banco do próprio serviço — nunca o do outro nem o broker, para que a falha deles não tire o
@@ -96,7 +96,7 @@ explícita, não como lacuna escondida: hoje, a ligação entre os serviços é 
 - **Plugin de métricas do RabbitMQ desligado:** os painéis do broker ficam vazios; o broker
   funciona normalmente.
 - **Limitador de requisições recusando muitas chamadas (`429`):** cada recusa entra na métrica de
-  requisições do serviço (`launch_requests_total` ou `consolidation_requests_total`) com
+  requisições do serviço (`cashflow_entry_requests_total` ou `consolidation_requests_total`) com
   `outcome="rate_limited"`, aparece no painel de requisições por resultado e gera uma linha de log
   de aviso (`Warning`) com o `correlationId` e o `sub` do chamador. Não há alerta dedicado porque
   `429` é a resposta esperada sob abuso, não um erro inesperado.

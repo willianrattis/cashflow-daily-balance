@@ -56,7 +56,7 @@ sequenceDiagram
     DLQ->>Broker: move as mensagens capturadas para a fila principal
     Broker->>Worker: reentrega (sem x-retry-count, conta como primeira tentativa)
     Worker->>CDB: INSERT na Inbox
-    alt EventId ou LaunchId já está na Inbox
+    alt EventId ou EntryId já está na Inbox
         CDB-->>Worker: violação da restrição UNIQUE → evento ignorado, sem efeito (Duplicate)
     else primeira vez
         Worker->>CDB: soma aos totais do dia
@@ -75,7 +75,7 @@ Três situações chegam a este fluxo, e nenhuma é uma falha temporária — es
 - **Mensagem inválida** — JSON malformado, ou formato e versão que a validação recusa antes de
   tentar somar. Vai direto para a DLQ, sem passar pelas filas de espera: ela nunca teria sucesso
   numa nova tentativa.
-- **Mensagem repetida** — o mesmo `EventId` ou `LaunchId` já está na Inbox. Não é uma falha: o
+- **Mensagem repetida** — o mesmo `EventId` ou `EntryId` já está na Inbox. Não é uma falha: o
   consumidor ignora a cópia, confirma (ACK) normalmente e nunca chega às filas de espera.
 
 Cada cópia publicada numa fila de espera ou na DLQ é confirmada pelo broker (publisher confirms)
@@ -83,7 +83,7 @@ antes do ACK da entrega original. Se a publicação da cópia falhar, a entrega 
 à fila (NACK com `requeue: true`, o contrário do ACK) e nunca se perde em silêncio.
 
 O reenvio (`scripts/ops/replay-dlq.sh`) usa um shovel dinâmico, recurso do RabbitMQ que move as
-mensagens da DLQ de volta para a fila principal. A Inbox — `EventId` e `LaunchId`,
+mensagens da DLQ de volta para a fila principal. A Inbox — `EventId` e `EntryId`,
 [ADR-004](../adr/ADR-004-processamento-idempotente.md) — garante que uma mensagem já somada antes
 seja ignorada, sem efeito. Uma mensagem permanentemente inválida volta para a DLQ, como na
 primeira vez: é o esperado, e não uma falha do reenvio.

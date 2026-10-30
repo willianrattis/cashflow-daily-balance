@@ -25,13 +25,13 @@ workspace "Fluxo de Caixa" "Controle de lançamentos e consolidado diário de um
 
             gateway = container "API Gateway + WAF (alvo)" "Porta de entrada única: encerra o HTTPS (TLS), filtra ataques conhecidos (WAF), limita as requisições de cada cliente e escolhe, pelo caminho HTTP, para qual cópia de cada serviço enviar." "Azure Application Gateway WAF_v2 (ilustrativo)" "Alvo"
 
-            launchService = container "LaunchService" "Valida o pedido, impede lançamentos duplicados (Idempotency-Key) e grava o lançamento e a mensagem a publicar (Outbox) na mesma transação. O publisher do Outbox roda no mesmo processo e publica os eventos." ".NET 10, ASP.NET Core Minimal APIs, EF Core"
+            entryService = container "CashFlowEntryService" "Valida o pedido, impede lançamentos duplicados (Idempotency-Key) e grava o lançamento e a mensagem a publicar (Outbox) na mesma transação. O publisher do Outbox roda no mesmo processo e publica os eventos." ".NET 10, ASP.NET Core Minimal APIs, EF Core"
 
-            launchDb = container "Launch DB" "Fonte da verdade: launches (só aceita linhas novas, um trigger recusa UPDATE e DELETE) e outbox_messages (as mensagens a publicar)." "PostgreSQL 17" "Database"
+            cashFlowEntryDb = container "Cash Flow Entry DB" "Fonte da verdade: cash_flow_entries (só aceita linhas novas, um trigger recusa UPDATE e DELETE) e outbox_messages (as mensagens a publicar)." "PostgreSQL 17" "Database"
 
-            broker = container "RabbitMQ" "A exchange cashflow.events entrega à fila consolidation.launch-recorded.v1. Filas de espera retry.1 a retry.3, com tempo de espera (TTL), e a fila das mensagens que não puderam ser processadas (DLQ), consolidation.launch-recorded.v1.dlq." "RabbitMQ 4.1, AMQP 0-9-1" "Broker"
+            broker = container "RabbitMQ" "A exchange cashflow.events entrega à fila consolidation.cashflow-entry-recorded.v1. Filas de espera retry.1 a retry.3, com tempo de espera (TTL), e a fila das mensagens que não puderam ser processadas (DLQ), consolidation.cashflow-entry-recorded.v1.dlq." "RabbitMQ 4.1, AMQP 0-9-1" "Broker"
 
-            consolidationService = container "ConsolidationService" "Consome LaunchRecorded v1: grava a Inbox e os totais do dia na mesma transação e só confirma a mensagem (ACK) depois do commit. Responde à consulta do saldo diário." ".NET 10, ASP.NET Core Minimal APIs, EF Core"
+            consolidationService = container "ConsolidationService" "Consome CashFlowEntryRecorded v1: grava a Inbox e os totais do dia na mesma transação e só confirma a mensagem (ACK) depois do commit. Responde à consulta do saldo diário." ".NET 10, ASP.NET Core Minimal APIs, EF Core"
 
             consolidationDb = container "Consolidation DB" "Totais por dia, calculados a partir dos eventos e reconstruíveis: daily_consolidations, inbox_messages (eventos já aplicados) e projection_metadata." "PostgreSQL 17" "Database"
 
@@ -51,51 +51,51 @@ workspace "Fluxo de Caixa" "Controle de lançamentos e consolidado diário de um
         cashflow -> legado "Importa histórico e compara saldos (só na transição)" "A definir" "Transicao"
 
         # Entrega local: o comerciante (ou um cliente HTTP) chama as APIs diretamente.
-        comerciante -> launchService "Registra lançamento (Idempotency-Key)" "HTTP/JSON, JWT Bearer (sem TLS no compose)" "Entrega"
+        comerciante -> entryService "Registra lançamento (Idempotency-Key)" "HTTP/JSON, JWT Bearer (sem TLS no compose)" "Entrega"
         comerciante -> consolidationService "Consulta o saldo diário consolidado" "HTTP/JSON, JWT Bearer (sem TLS no compose)" "Entrega"
 
         # Arquitetura alvo: tudo passa pelo gateway; tokens vêm do IdP.
         comerciante -> gateway "Registra lançamentos e consulta o consolidado" "HTTPS/JSON" "Alvo"
         comerciante -> idp "Autentica-se" "OIDC" "Alvo"
-        gateway -> launchService "Encaminha registros e consultas de lançamento" "HTTPS, JWT Bearer" "Alvo"
+        gateway -> entryService "Encaminha registros e consultas de lançamento" "HTTPS, JWT Bearer" "Alvo"
         gateway -> consolidationService "Encaminha consultas do consolidado" "HTTPS, JWT Bearer" "Alvo"
-        launchService -> idp "Busca as chaves públicas (JWKS), guardadas em memória, para validar a assinatura do token" "HTTPS" "Alvo"
+        entryService -> idp "Busca as chaves públicas (JWKS), guardadas em memória, para validar a assinatura do token" "HTTPS" "Alvo"
         consolidationService -> idp "Busca as chaves públicas (JWKS), guardadas em memória, para validar a assinatura do token" "HTTPS" "Alvo"
 
         # Núcleo: mesmo mecanismo na entrega e na arquitetura alvo — só o protocolo de rede muda
         # (sem TLS no compose local x TLS no alvo; ver diagrams/README.md "Convenções").
-        launchService -> launchDb "Grava o lançamento e a mensagem do Outbox na mesma transação. O publisher reserva um lote de mensagens pendentes (FOR UPDATE SKIP LOCKED)" "SQL/TCP (sem TLS no compose)" "Entrega"
-        launchService -> launchDb "Grava o lançamento e a mensagem do Outbox na mesma transação. O publisher reserva um lote de mensagens pendentes (FOR UPDATE SKIP LOCKED) [alvo]" "PostgreSQL (TLS)" "Alvo"
-        launchService -> broker "Publica LaunchRecorded v1 e só a marca como publicada depois da confirmação do broker (mandatory + publisher confirms)" "AMQP 0-9-1 (sem TLS no compose)" "Entrega"
-        launchService -> broker "Publica LaunchRecorded v1 e só a marca como publicada depois da confirmação do broker (mandatory + publisher confirms) [alvo]" "AMQPS" "Alvo"
-        consolidationService -> broker "Consome LaunchRecorded v1 e confirma (ACK) só depois do commit. As falhas vão para as filas de espera retry.1 a retry.3 ou para a DLQ" "AMQP 0-9-1 (sem TLS no compose)" "Entrega"
-        consolidationService -> broker "Consome LaunchRecorded v1 e confirma (ACK) só depois do commit. As falhas vão para as filas de espera retry.1 a retry.3 ou para a DLQ [alvo]" "AMQPS" "Alvo"
+        entryService -> cashFlowEntryDb "Grava o lançamento e a mensagem do Outbox na mesma transação. O publisher reserva um lote de mensagens pendentes (FOR UPDATE SKIP LOCKED)" "SQL/TCP (sem TLS no compose)" "Entrega"
+        entryService -> cashFlowEntryDb "Grava o lançamento e a mensagem do Outbox na mesma transação. O publisher reserva um lote de mensagens pendentes (FOR UPDATE SKIP LOCKED) [alvo]" "PostgreSQL (TLS)" "Alvo"
+        entryService -> broker "Publica CashFlowEntryRecorded v1 e só a marca como publicada depois da confirmação do broker (mandatory + publisher confirms)" "AMQP 0-9-1 (sem TLS no compose)" "Entrega"
+        entryService -> broker "Publica CashFlowEntryRecorded v1 e só a marca como publicada depois da confirmação do broker (mandatory + publisher confirms) [alvo]" "AMQPS" "Alvo"
+        consolidationService -> broker "Consome CashFlowEntryRecorded v1 e confirma (ACK) só depois do commit. As falhas vão para as filas de espera retry.1 a retry.3 ou para a DLQ" "AMQP 0-9-1 (sem TLS no compose)" "Entrega"
+        consolidationService -> broker "Consome CashFlowEntryRecorded v1 e confirma (ACK) só depois do commit. As falhas vão para as filas de espera retry.1 a retry.3 ou para a DLQ [alvo]" "AMQPS" "Alvo"
         consolidationService -> consolidationDb "Grava a Inbox e os totais do dia na mesma transação. A consulta lê uma visão fixa dos dados (REPEATABLE READ)" "SQL/TCP (sem TLS no compose)" "Entrega"
         consolidationService -> consolidationDb "Grava a Inbox e os totais do dia na mesma transação. A consulta lê uma visão fixa dos dados (REPEATABLE READ) [alvo]" "PostgreSQL (TLS)" "Alvo"
 
         # Observabilidade.
-        prometheus -> launchService "Coleta /metrics" "HTTP"
+        prometheus -> entryService "Coleta /metrics" "HTTP"
         prometheus -> consolidationService "Coleta /metrics" "HTTP"
         prometheus -> broker "Coleta métricas das filas" "HTTP (plugin rabbitmq_prometheus)"
         grafana -> prometheus "Consulta métricas" "HTTP/PromQL"
 
         # Transição (hipotética).
         backfill -> legado "Lê lançamentos históricos" "A definir"
-        backfill -> launchDb "Importa histórico com a data do legado (job de importação, só na transição)" "SQL/TCP"
+        backfill -> cashFlowEntryDb "Importa histórico com a data do legado (job de importação, só na transição)" "SQL/TCP"
         shadow -> legado "Lê o saldo diário do legado" "A definir"
         shadow -> consolidationService "Lê o saldo diário do novo Consolidado" "HTTPS/JSON"
 
         local = deploymentEnvironment "Local" {
             deploymentNode "Máquina do avaliador" "" "Docker Compose" {
                 deploymentNode "postgres" "Um servidor, dois bancos e um usuário de banco por serviço" "postgres:17.6-alpine3.21 (porta 5433)" {
-                    containerInstance launchDb
+                    containerInstance cashFlowEntryDb
                     containerInstance consolidationDb
                 }
                 deploymentNode "rabbitmq" "" "rabbitmq:4.1.1-management-alpine (5672, painel 15672, métricas 15692)" {
                     containerInstance broker
                 }
-                deploymentNode "launchservice" "" "Imagem .NET 10 (porta 5101)" {
-                    containerInstance launchService
+                deploymentNode "cashflowentryservice" "" "Imagem .NET 10 (porta 5101)" {
+                    containerInstance entryService
                 }
                 deploymentNode "consolidationservice" "" "Imagem .NET 10 (porta 5102)" {
                     containerInstance consolidationService
@@ -118,8 +118,8 @@ workspace "Fluxo de Caixa" "Controle de lançamentos e consolidado diário de um
                     containerInstance gateway
                 }
                 deploymentNode "Container Apps (Dedicated) — Lançamentos" "Ambiente próprio de Lançamentos" "Azure Container Apps" {
-                    deploymentNode "launchservice" "Cresce com mais cópias: pelo menos 2 réplicas, em zonas diferentes" "Container" "" 2 {
-                        launchServiceAlvo = containerInstance launchService
+                    deploymentNode "cashflowentryservice" "Cresce com mais cópias: pelo menos 2 réplicas, em zonas diferentes" "Container" "" 2 {
+                        entryServiceAlvo = containerInstance entryService
                     }
                 }
                 deploymentNode "Container Apps (Dedicated) — Consolidado" "Ambiente próprio do Consolidado; também roda a observabilidade" "Azure Container Apps" {
@@ -134,11 +134,11 @@ workspace "Fluxo de Caixa" "Controle de lançamentos e consolidado diário de um
                     }
                 }
                 logAnalytics = infrastructureNode "Serviço gerenciado de logs (alvo)" "Recebe e guarda os logs JSON dos dois serviços; permite buscá-los, por exemplo pelo correlationId" "Azure Monitor Log Analytics"
-                deploymentNode "PostgreSQL Flexible Server — Launch" "Alta disponibilidade entre zonas: cópia de espera síncrona, para nenhum lançamento confirmado se perder (RPO 0)" "Azure Database for PostgreSQL" {
-                    launchDbPrimary = deploymentNode "primary" "" "D2ds_v5" {
-                        containerInstance launchDb
+                deploymentNode "PostgreSQL Flexible Server — CashFlowEntry" "Alta disponibilidade entre zonas: cópia de espera síncrona, para nenhum lançamento confirmado se perder (RPO 0)" "Azure Database for PostgreSQL" {
+                    cashFlowEntryDbPrimary = deploymentNode "primary" "" "D2ds_v5" {
+                        containerInstance cashFlowEntryDb
                     }
-                    launchDbStandby = infrastructureNode "Cópia de espera síncrona (standby)" "Em outra zona. Vira o servidor principal automaticamente se o principal cair (failover)" "PostgreSQL, D2ds_v5"
+                    cashFlowEntryDbStandby = infrastructureNode "Cópia de espera síncrona (standby)" "Em outra zona. Vira o servidor principal automaticamente se o principal cair (failover)" "PostgreSQL, D2ds_v5"
                 }
                 deploymentNode "PostgreSQL Flexible Server — Consolidation" "Totais reconstruíveis a partir do Outbox" "Azure Database for PostgreSQL" {
                     consolidationDbPrimary = deploymentNode "primary" "" "D2ds_v5" {
@@ -147,9 +147,9 @@ workspace "Fluxo de Caixa" "Controle de lançamentos e consolidado diário de um
                     consolidationDbReplica = infrastructureNode "Réplica de leitura assíncrona (read replica)" "Troca manual. Perder alguns segundos de dados é aceitável, porque os totais podem ser reconstruídos" "PostgreSQL, D2ds_v5"
                 }
             }
-            launchDbPrimary -> launchDbStandby "Copia cada gravação de forma síncrona: o commit só termina depois que a cópia confirma" "Streaming replication"
+            cashFlowEntryDbPrimary -> cashFlowEntryDbStandby "Copia cada gravação de forma síncrona: o commit só termina depois que a cópia confirma" "Streaming replication"
             consolidationDbPrimary -> consolidationDbReplica "Copia as gravações de forma assíncrona, com alguns segundos de atraso" "Streaming replication"
-            launchServiceAlvo -> logAnalytics "Envia os logs" "HTTPS"
+            entryServiceAlvo -> logAnalytics "Envia os logs" "HTTPS"
             consolidationServiceAlvo -> logAnalytics "Envia os logs" "HTTPS"
 
             deploymentNode "CloudAMQP" "Cluster dedicado, com nós em zonas diferentes" "RabbitMQ, quorum queues" "" 3 {
@@ -177,8 +177,8 @@ workspace "Fluxo de Caixa" "Controle de lançamentos e consolidado diário de um
             autolayout lr
         }
 
-        container cashflow "Transicao" "Migração de um sistema legado hipotético: o job de importação grava direto no Launch DB, e a comparação em paralelo (leitura sombra) segue até a troca definitiva (cutover)." {
-            include legado backfill shadow launchService launchDb broker consolidationService consolidationDb
+        container cashflow "Transicao" "Migração de um sistema legado hipotético: o job de importação grava direto no Cash Flow Entry DB, e a comparação em paralelo (leitura sombra) segue até a troca definitiva (cutover)." {
+            include legado backfill shadow entryService cashFlowEntryDb broker consolidationService consolidationDb
             exclude "relationship.tag==Alvo"
             autolayout lr
         }

@@ -1,16 +1,16 @@
 namespace ConsolidationService.Domain;
 
 /// <summary>
-/// Records that an event has been received/applied, so a redelivered `LaunchRecorded.v1` becomes
+/// Records that an event has been received/applied, so a redelivered `CashFlowEntryRecorded.v1` becomes
 /// a safe no-op instead of double-counting (ADR-004). Unique on EventId (PK) and again on
-/// LaunchId: either collision means "already processed".
+/// EntryId: either collision means "already processed".
 /// </summary>
 public sealed class InboxMessage
 {
     private InboxMessage() { }
 
     public Guid EventId { get; private set; }
-    public Guid LaunchId { get; private set; }
+    public Guid EntryId { get; private set; }
     public string EventType { get; private set; } = default!;
     public int EventVersion { get; private set; }
     public DateTime ReceivedAtUtc { get; private set; }
@@ -19,14 +19,14 @@ public sealed class InboxMessage
 
     public static InboxMessage CreateProcessed(
         Guid eventId,
-        Guid launchId,
+        Guid entryId,
         string eventType,
         int eventVersion,
         DateTime receivedAtUtc,
         DateTime processedAtUtc) => new()
     {
         EventId = eventId,
-        LaunchId = launchId,
+        EntryId = entryId,
         EventType = eventType,
         EventVersion = eventVersion,
         ReceivedAtUtc = receivedAtUtc,

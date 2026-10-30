@@ -10,10 +10,10 @@ ar.
 sequenceDiagram
     autonumber
     actor Caller as Cliente
-    participant API as LaunchService (API)
-    participant Handler as RecordLaunch handler
-    participant DB as Launch DB
-    participant Publisher as LaunchService (publisher do Outbox)
+    participant API as CashFlowEntryService (API)
+    participant Handler as RecordEntry handler
+    participant DB as Cash Flow Entry DB
+    participant Publisher as CashFlowEntryService (publisher do Outbox)
     participant Broker as RabbitMQ
     participant Worker as ConsolidationService (consumidor)
     participant CDB as Consolidation DB
@@ -30,20 +30,20 @@ sequenceDiagram
             DB-->>Handler: violação do índice único → trata como repetição (200) ou conflito (409)
         else
             DB-->>Handler: commit confirmado
-            Handler-->>API: launchId + 201 Created
+            Handler-->>API: entryId + 201 Created
         end
     end
     API-->>Caller: lançamento gravado
 
     Publisher->>DB: BEGIN + reserva um lote de mensagens pendentes (SELECT ... FOR UPDATE SKIP LOCKED)
-    Publisher->>Broker: publica LaunchRecorded.v1 (x-retry-count=0, x-correlation-id)
+    Publisher->>Broker: publica CashFlowEntryRecorded.v1 (x-retry-count=0, x-correlation-id)
     Broker-->>Publisher: publicação confirmada (mandatory + publisher confirms)
     Publisher->>DB: marca a mensagem como Published + COMMIT (libera as linhas reservadas)
 
     Broker->>Worker: entrega o evento
-    Worker->>CDB: BEGIN + INSERT na Inbox (EventId e LaunchId)
-    alt EventId ou LaunchId já está na Inbox (reentrega)
-        CDB-->>Worker: violação da chave primária (EventId) ou do índice único (LaunchId)
+    Worker->>CDB: BEGIN + INSERT na Inbox (EventId e EntryId)
+    alt EventId ou EntryId já está na Inbox (reentrega)
+        CDB-->>Worker: violação da chave primária (EventId) ou do índice único (EntryId)
         Worker->>CDB: ROLLBACK (nada é gravado) → evento ignorado, sem efeito (Duplicate)
     else primeira vez
         Worker->>CDB: inserir ou atualizar o total do dia (upsert) + inserir ou atualizar projection_metadata
@@ -68,5 +68,5 @@ Como ler os passos:
 - **Consumo (passos 15 a 22).** A Inbox, a tabela dos eventos já aplicados, e os totais do dia
   são gravados na mesma transação. O ACK (acknowledgement, a confirmação de recebimento ao broker)
   só sai depois do commit. Um evento entregue de novo esbarra na chave primária (`event_id`) ou no
-  índice único (`launch_id`) da Inbox: a transação é desfeita (`ROLLBACK`), nada é somado, e o ACK
+  índice único (`entry_id`) da Inbox: a transação é desfeita (`ROLLBACK`), nada é somado, e o ACK
   sai do mesmo jeito, porque o evento já estava aplicado.

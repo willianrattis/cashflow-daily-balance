@@ -8,7 +8,7 @@
 # in the DLQ when it started, then stop and delete itself; it will NOT pick up messages that
 # land in the DLQ *while* it is running. Re-run this script if the DLQ keeps growing.
 #
-# Replayed messages are deduplicated downstream by the Inbox (EventId/LaunchId, ADR-004): a
+# Replayed messages are deduplicated downstream by the Inbox (EventId/EntryId, ADR-004): a
 # message that was valid all along is applied once even if replayed more than once; an
 # invalid message is rejected by the consumer the same way it was the first time and lands
 # right back in the DLQ — that is expected, not a bug.
@@ -29,8 +29,8 @@ MGMT_USER="cashflow"
 MGMT_PASS="cashflow-dev-only"
 VHOST="%2F"
 SHOVEL_NAME="dlq-replay-$(date +%s)"
-SRC_QUEUE="consolidation.launch-recorded.v1.dlq"
-DEST_QUEUE="consolidation.launch-recorded.v1"
+SRC_QUEUE="consolidation.cashflow-entry-recorded.v1.dlq"
+DEST_QUEUE="consolidation.cashflow-entry-recorded.v1"
 TIMEOUT="${1:-60}"
 
 cleanup() {

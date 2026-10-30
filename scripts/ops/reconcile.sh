@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Reconciles LaunchService's ledger (launch_db.launches) against ConsolidationService's
+# Reconciles CashFlowEntryService's ledger (cashflow_entry_db.cash_flow_entries) against ConsolidationService's
 # projection (consolidation_db.daily_consolidations), per business_date.
 #
 # This is OPERATIONAL TOOLING, run by hand or from a runbook/cron against the Docker Compose
@@ -10,7 +10,7 @@
 #
 # Uses the admin/superuser role (`cashflow`) on purpose — it is the only role allowed to read
 # both databases from one script; the services themselves connect as the non-superuser
-# `launch_svc`/`consolidation_svc` roles, each unable to reach the other's database
+# `cashflow_entry_svc`/`consolidation_svc` roles, each unable to reach the other's database
 # (docs/05-aspectos-transversais.md §1).
 #
 # Usage:
@@ -25,7 +25,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 LEDGER_SQL="SELECT business_date || '|' ||
     COALESCE(SUM(amount_in_cents) FILTER (WHERE nature = 'Credit'), 0) || '|' ||
     COALESCE(SUM(amount_in_cents) FILTER (WHERE nature = 'Debit'), 0)
-  FROM launches
+  FROM cash_flow_entries
   GROUP BY business_date
   ORDER BY business_date;"
 
@@ -33,8 +33,8 @@ PROJECTION_SQL="SELECT business_date || '|' || credits_in_cents || '|' || debits
   FROM daily_consolidations
   ORDER BY business_date;"
 
-echo "Lendo launch_db.launches..."
-ledger=$(docker compose exec -T postgres psql -U cashflow -d launch_db -t -A -c "$LEDGER_SQL")
+echo "Lendo cashflow_entry_db.cash_flow_entries..."
+ledger=$(docker compose exec -T postgres psql -U cashflow -d cashflow_entry_db -t -A -c "$LEDGER_SQL")
 
 echo "Lendo consolidation_db.daily_consolidations..."
 projection=$(docker compose exec -T postgres psql -U cashflow -d consolidation_db -t -A -c "$PROJECTION_SQL")
@@ -42,10 +42,10 @@ projection=$(docker compose exec -T postgres psql -U cashflow -d consolidation_d
 echo
 echo "Formato de cada linha: business_date|credits_in_cents|debits_in_cents"
 if diff_output=$(diff <(echo "$ledger") <(echo "$projection")); then
-  echo "RECONCILE: PASS — ledger (launch_db) e projeção (consolidation_db) conferem para todas as business_date."
+  echo "RECONCILE: PASS — ledger (cashflow_entry_db) e projeção (consolidation_db) conferem para todas as business_date."
   exit 0
 else
-  echo "RECONCILE: FAIL — divergência entre ledger e projeção ('<' = launch_db, '>' = consolidation_db):"
+  echo "RECONCILE: FAIL — divergência entre ledger e projeção ('<' = cashflow_entry_db, '>' = consolidation_db):"
   echo "$diff_output"
   exit 1
 fi

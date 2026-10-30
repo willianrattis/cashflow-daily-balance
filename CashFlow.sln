@@ -5,21 +5,21 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72D-47B6-A68D-7590B98EB39B}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LaunchService", "src\LaunchService\LaunchService.csproj", "{DD7A87E1-BB89-4C0F-93B1-0830326B6989}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CashFlowEntryService", "src\CashFlowEntryService\CashFlowEntryService.csproj", "{DD7A87E1-BB89-4C0F-93B1-0830326B6989}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConsolidationService", "src\ConsolidationService\ConsolidationService.csproj", "{4BD5D2A9-E950-432C-9FA2-CEDA2705E64B}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{0AB3BF05-4346-4AA6-1389-037BE0695223}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LaunchService.UnitTests", "tests\LaunchService.UnitTests\LaunchService.UnitTests.csproj", "{CCACE58F-E9EC-45BA-A727-91D08747C5A5}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CashFlowEntryService.UnitTests", "tests\CashFlowEntryService.UnitTests\CashFlowEntryService.UnitTests.csproj", "{CCACE58F-E9EC-45BA-A727-91D08747C5A5}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LaunchService.IntegrationTests", "tests\LaunchService.IntegrationTests\LaunchService.IntegrationTests.csproj", "{95EF6E50-AC8F-48B4-B153-C65E5AEAAED6}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CashFlowEntryService.IntegrationTests", "tests\CashFlowEntryService.IntegrationTests\CashFlowEntryService.IntegrationTests.csproj", "{95EF6E50-AC8F-48B4-B153-C65E5AEAAED6}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConsolidationService.UnitTests", "tests\ConsolidationService.UnitTests\ConsolidationService.UnitTests.csproj", "{DE4E4370-F7FC-4A73-9FC4-15486B3A370A}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConsolidationService.IntegrationTests", "tests\ConsolidationService.IntegrationTests\ConsolidationService.IntegrationTests.csproj", "{24363ABD-2723-4C25-B26C-D1B7ECC32CD0}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LaunchService.OutboxPublisherTests", "tests\LaunchService.OutboxPublisherTests\LaunchService.OutboxPublisherTests.csproj", "{7C83205C-AA70-4EA8-81BB-A1356A643A37}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CashFlowEntryService.OutboxPublisherTests", "tests\CashFlowEntryService.OutboxPublisherTests\CashFlowEntryService.OutboxPublisherTests.csproj", "{7C83205C-AA70-4EA8-81BB-A1356A643A37}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

@@ -6,11 +6,11 @@ public class ConsumerTests(ConsolidationServiceTestFixture fixture)
     [Fact]
     public async Task A_published_event_is_consumed_and_projected_onto_the_daily_total()
     {
-        var launchId = Guid.NewGuid();
+        var entryId = Guid.NewGuid();
         var businessDate = UniqueBusinessDate.NextBlockStart();
 
-        await TestEventPublisher.PublishLaunchRecordedAsync(
-            fixture, launchId, amountInCents: 1500, nature: "Credit", businessDate, DateTime.UtcNow);
+        await TestEventPublisher.PublishCashFlowEntryRecordedAsync(
+            fixture, entryId, amountInCents: 1500, nature: "Credit", businessDate, DateTime.UtcNow);
 
         var projected = await Eventually.WaitUntilAsync(async () =>
         {
@@ -26,19 +26,19 @@ public class ConsumerTests(ConsolidationServiceTestFixture fixture)
         Assert.Equal(0, row.DebitsInCents);
         Assert.Equal(1500, row.NetChangeInCents);
 
-        var inboxExists = await finalDb.InboxMessages.AnyAsync(i => i.LaunchId == launchId);
+        var inboxExists = await finalDb.InboxMessages.AnyAsync(i => i.EntryId == entryId);
         Assert.True(inboxExists);
     }
 
     [Fact]
     public async Task Redelivering_the_same_event_does_not_apply_the_value_twice()
     {
-        var launchId = Guid.NewGuid();
+        var entryId = Guid.NewGuid();
         var eventId = Guid.NewGuid();
         var businessDate = UniqueBusinessDate.NextBlockStart();
 
-        await TestEventPublisher.PublishLaunchRecordedAsync(
-            fixture, launchId, amountInCents: 2000, nature: "Debit", businessDate, DateTime.UtcNow, eventId: eventId);
+        await TestEventPublisher.PublishCashFlowEntryRecordedAsync(
+            fixture, entryId, amountInCents: 2000, nature: "Debit", businessDate, DateTime.UtcNow, eventId: eventId);
 
         await Eventually.WaitUntilAsync(async () =>
         {
@@ -46,9 +46,9 @@ public class ConsumerTests(ConsolidationServiceTestFixture fixture)
             return await db.DailyConsolidations.AnyAsync(d => d.BusinessDate == businessDate);
         });
 
-        // Redeliver the exact same event (same EventId/LaunchId) — simulates an at-least-once redelivery.
-        await TestEventPublisher.PublishLaunchRecordedAsync(
-            fixture, launchId, amountInCents: 2000, nature: "Debit", businessDate, DateTime.UtcNow, eventId: eventId);
+        // Redeliver the exact same event (same EventId/EntryId) — simulates an at-least-once redelivery.
+        await TestEventPublisher.PublishCashFlowEntryRecordedAsync(
+            fixture, entryId, amountInCents: 2000, nature: "Debit", businessDate, DateTime.UtcNow, eventId: eventId);
 
         // Give the (no-op) redelivery time to be processed before asserting the total stayed the same.
         await Task.Delay(TimeSpan.FromSeconds(2));
@@ -57,7 +57,7 @@ public class ConsumerTests(ConsolidationServiceTestFixture fixture)
         var row = await db.DailyConsolidations.SingleAsync(d => d.BusinessDate == businessDate);
         Assert.Equal(2000, row.DebitsInCents);
 
-        var inboxCount = await db.InboxMessages.CountAsync(i => i.LaunchId == launchId);
+        var inboxCount = await db.InboxMessages.CountAsync(i => i.EntryId == entryId);
         Assert.Equal(1, inboxCount);
     }
 
@@ -84,10 +84,10 @@ public class ConsumerTests(ConsolidationServiceTestFixture fixture)
         Assert.Equal("unsupported_event_type", reason);
 
         // The consumer must keep working for subsequent, valid events after rejecting the bad one.
-        var launchId = Guid.NewGuid();
+        var entryId = Guid.NewGuid();
         var businessDate = UniqueBusinessDate.NextBlockStart();
-        await TestEventPublisher.PublishLaunchRecordedAsync(
-            fixture, launchId, amountInCents: 750, nature: "Credit", businessDate, DateTime.UtcNow);
+        await TestEventPublisher.PublishCashFlowEntryRecordedAsync(
+            fixture, entryId, amountInCents: 750, nature: "Credit", businessDate, DateTime.UtcNow);
 
         var projected = await Eventually.WaitUntilAsync(async () =>
         {
@@ -102,7 +102,7 @@ public class ConsumerTests(ConsolidationServiceTestFixture fixture)
     public async Task A_message_that_reaches_the_dlq_keeps_the_original_correlation_id_header_and_body()
     {
         // Same shape as the unsupported-event-type DLQ case above, but carrying an AMQP
-        // x-correlation-id header the way LaunchService's Outbox Publisher stamps it on first
+        // x-correlation-id header the way CashFlowEntryService's Outbox Publisher stamps it on first
         // publish — proves the republish onto the DLQ copies it instead of dropping it.
         var expectedCorrelationId = $"corr-{Guid.NewGuid():N}";
         var invalidJson = $$"""
@@ -134,13 +134,13 @@ public class ConsumerTests(ConsolidationServiceTestFixture fixture)
         var invalidJson = $$"""
             {
               "eventId": "{{Guid.NewGuid()}}",
-              "eventType": "LaunchRecorded",
+              "eventType": "CashFlowEntryRecorded",
               "eventVersion": 1,
               "occurredAtUtc": "{{DateTime.UtcNow:O}}",
               "correlationId": "c",
               "causationId": "c",
               "payload": {
-                "launchId": "{{Guid.NewGuid()}}",
+                "entryId": "{{Guid.NewGuid()}}",
                 "amountInCents": 100,
                 "nature": "Credit",
                 "businessDate": "0001-01-01",
@@ -163,13 +163,13 @@ public class ConsumerTests(ConsolidationServiceTestFixture fixture)
         var invalidJson = $$"""
             {
               "eventId": "{{Guid.NewGuid()}}",
-              "eventType": "LaunchRecorded",
+              "eventType": "CashFlowEntryRecorded",
               "eventVersion": 1,
               "occurredAtUtc": "{{DateTime.UtcNow:O}}",
               "correlationId": "c",
               "causationId": "c",
               "payload": {
-                "launchId": "{{Guid.NewGuid()}}",
+                "entryId": "{{Guid.NewGuid()}}",
                 "amountInCents": 100,
                 "nature": "Credit",
                 "businessDate": "2026-10-16",
@@ -189,15 +189,15 @@ public class ConsumerTests(ConsolidationServiceTestFixture fixture)
     [Fact]
     public async Task A_transient_fault_keeps_retrying_and_eventually_succeeds_without_ever_reaching_the_dlq()
     {
-        var launchId = Guid.NewGuid();
+        var entryId = Guid.NewGuid();
         var businessDate = UniqueBusinessDate.NextBlockStart();
 
         // More failures than retry levels exist (3), so this also proves the transient path
         // re-parks on the last level instead of dead-lettering once the ladder is exhausted (ADR-002).
-        fixture.Faults.FailNTimes(launchId, times: 6, () => new TimeoutException("simulated transient Postgres timeout"));
+        fixture.Faults.FailNTimes(entryId, times: 6, () => new TimeoutException("simulated transient Postgres timeout"));
 
-        await TestEventPublisher.PublishLaunchRecordedAsync(
-            fixture, launchId, amountInCents: 1234, nature: "Credit", businessDate, DateTime.UtcNow);
+        await TestEventPublisher.PublishCashFlowEntryRecordedAsync(
+            fixture, entryId, amountInCents: 1234, nature: "Credit", businessDate, DateTime.UtcNow);
 
         var projected = await Eventually.WaitUntilAsync(async () =>
         {
@@ -211,7 +211,7 @@ public class ConsumerTests(ConsolidationServiceTestFixture fixture)
         var row = await db.DailyConsolidations.SingleAsync(d => d.BusinessDate == businessDate);
         Assert.Equal(1234, row.CreditsInCents);
 
-        var inboxCount = await db.InboxMessages.CountAsync(i => i.LaunchId == launchId);
+        var inboxCount = await db.InboxMessages.CountAsync(i => i.EntryId == entryId);
         Assert.Equal(1, inboxCount);
 
         var dlqMessage = await TestBrokerAdmin.BasicGetAsync(fixture, CashFlowTopology.DeadLetterQueue, autoAck: false);
@@ -221,13 +221,13 @@ public class ConsumerTests(ConsolidationServiceTestFixture fixture)
     [Fact]
     public async Task An_unexpected_fault_that_never_recovers_reaches_the_dlq_after_the_bounded_ladder()
     {
-        var launchId = Guid.NewGuid();
+        var entryId = Guid.NewGuid();
         var businessDate = UniqueBusinessDate.NextBlockStart();
 
-        fixture.Faults.FailAlways(launchId, () => new InvalidOperationException("simulated unexpected projector bug"));
+        fixture.Faults.FailAlways(entryId, () => new InvalidOperationException("simulated unexpected projector bug"));
 
-        await TestEventPublisher.PublishLaunchRecordedAsync(
-            fixture, launchId, amountInCents: 999, nature: "Debit", businessDate, DateTime.UtcNow);
+        await TestEventPublisher.PublishCashFlowEntryRecordedAsync(
+            fixture, entryId, amountInCents: 999, nature: "Debit", businessDate, DateTime.UtcNow);
 
         var dlqMessage = await TestBrokerAdmin.WaitForMessageAsync(fixture, CashFlowTopology.DeadLetterQueue, TimeSpan.FromSeconds(15));
         Assert.NotNull(dlqMessage);
@@ -242,18 +242,18 @@ public class ConsumerTests(ConsolidationServiceTestFixture fixture)
     [Fact]
     public async Task Replaying_a_dead_lettered_message_restarts_the_retry_ladder_from_zero()
     {
-        var launchId = Guid.NewGuid();
+        var entryId = Guid.NewGuid();
         var businessDate = UniqueBusinessDate.NextBlockStart();
 
-        fixture.Faults.FailAlways(launchId, () => new InvalidOperationException("simulated unexpected projector bug"));
+        fixture.Faults.FailAlways(entryId, () => new InvalidOperationException("simulated unexpected projector bug"));
 
-        await TestEventPublisher.PublishLaunchRecordedAsync(
-            fixture, launchId, amountInCents: 4200, nature: "Debit", businessDate, DateTime.UtcNow);
+        await TestEventPublisher.PublishCashFlowEntryRecordedAsync(
+            fixture, entryId, amountInCents: 4200, nature: "Debit", businessDate, DateTime.UtcNow);
 
         var dlqMessage = await TestBrokerAdmin.WaitForMessageAsync(fixture, CashFlowTopology.DeadLetterQueue, TimeSpan.FromSeconds(15));
         Assert.NotNull(dlqMessage);
 
-        // A DLQ'd message never carries x-retry-count (LaunchRecordedConsumerService always
+        // A DLQ'd message never carries x-retry-count (CashFlowEntryRecordedConsumerService always
         // passes retryCountHeaderValue: null for the DLQ) — replay-dlq.sh's shovel moves it back
         // onto the main exchange with its properties as-is, so the redelivered copy arrives the
         // same way: no header at all, read as retryCount 0 (ReadRetryCount's default).
@@ -265,7 +265,7 @@ public class ConsumerTests(ConsolidationServiceTestFixture fixture)
         // Simulate the replay: three MORE unexpected failures before succeeding. If the ladder
         // had not reset to zero, a single failure here would dead-letter it again immediately
         // instead of going through all three retry levels again.
-        fixture.Faults.FailNTimes(launchId, times: 3, () => new InvalidOperationException("simulated unexpected projector bug — after replay"));
+        fixture.Faults.FailNTimes(entryId, times: 3, () => new InvalidOperationException("simulated unexpected projector bug — after replay"));
         await TestEventPublisher.PublishRawAsync(fixture, replayedBody);
 
         var projected = await Eventually.WaitUntilAsync(async () =>

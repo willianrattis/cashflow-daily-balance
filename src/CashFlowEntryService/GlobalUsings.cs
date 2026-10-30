@@ -1,0 +1,43 @@
+global using System.Diagnostics;
+global using System.Diagnostics.Metrics;
+global using System.Security.Claims;
+global using System.Security.Cryptography;
+global using System.Text;
+global using System.Text.Json;
+global using System.Text.Json.Serialization;
+global using System.Threading.RateLimiting;
+
+global using Microsoft.AspNetCore.Authentication.JwtBearer;
+global using Microsoft.AspNetCore.Authorization;
+global using Microsoft.AspNetCore.Diagnostics;
+global using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+global using Microsoft.AspNetCore.OpenApi;
+global using Microsoft.AspNetCore.RateLimiting;
+global using Microsoft.EntityFrameworkCore;
+global using Microsoft.EntityFrameworkCore.Design;
+global using Microsoft.EntityFrameworkCore.Metadata.Builders;
+global using Microsoft.Extensions.Diagnostics.HealthChecks;
+global using Microsoft.Extensions.Options;
+global using Microsoft.IdentityModel.Tokens;
+global using Microsoft.OpenApi;
+
+global using Npgsql;
+global using OpenTelemetry.Metrics;
+global using RabbitMQ.Client;
+global using RabbitMQ.Client.Exceptions;
+
+global using CashFlowEntryService.Domain;
+global using CashFlowEntryService.Features;
+global using CashFlowEntryService.Features.GetEntry;
+global using CashFlowEntryService.Features.RecordEntry;
+global using CashFlowEntryService.Infrastructure.Auth;
+global using CashFlowEntryService.Infrastructure.Clock;
+global using CashFlowEntryService.Infrastructure.Composition;
+global using CashFlowEntryService.Infrastructure.Errors;
+global using CashFlowEntryService.Infrastructure.Messaging;
+global using CashFlowEntryService.Infrastructure.Observability;
+global using CashFlowEntryService.Infrastructure.Outbox;
+global using CashFlowEntryService.Infrastructure.Persistence;
+global using CashFlowEntryService.Infrastructure.Persistence.Configurations;
+global using CashFlowEntryService.Infrastructure.RateLimiting;
+global using CashFlowEntryService.Infrastructure.Validation;

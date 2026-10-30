@@ -9,8 +9,8 @@ crédito; repetir com R$ 100,00 devolve o mesmo lançamento; repetir com R$ 150,
 sequenceDiagram
     autonumber
     actor Caller as Cliente
-    participant API as LaunchService (API)
-    participant DB as Launch DB
+    participant API as CashFlowEntryService (API)
+    participant DB as Cash Flow Entry DB
 
     Caller->>API: POST do lançamento + Idempotency-Key K
     API->>DB: BEGIN

@@ -6,7 +6,7 @@ namespace ConsolidationService.Domain;
 /// (docs/04-schema-logico.md). It powers `asOfUtc`, `lastAppliedEventRecordedAtUtc` and
 /// `lastAppliedLagSeconds` in the consolidation query — the lag of the *last applied event*
 /// (`LastAppliedAtUtc - LastAppliedEventRecordedAtUtc`), not time elapsed since now (NFR-005):
-/// a quiet period with no recent launches is not stale by this measure. Exactly one row ever
+/// a quiet period with no recent entries is not stale by this measure. Exactly one row ever
 /// exists — enforced by a constant primary key with a `CHECK` constraint
 /// (<see cref="SingletonId"/>, <c>ProjectionMetadataConfiguration</c>).
 /// </summary>

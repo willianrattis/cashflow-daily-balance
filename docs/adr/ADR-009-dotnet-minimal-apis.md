@@ -22,7 +22,7 @@ que a solução depende (ADR-008, decisão sobre o PostgreSQL).
   Development Kit, o compilador e as ferramentas do .NET) em `10.0.402`, com
   `rollForward: latestFeature`.
 - **Minimal APIs do framework web do .NET (ASP.NET Core), organizadas por funcionalidade**
-  (`Features/RecordLaunch`, `Features/GetLaunch`, `Features/GetConsolidation`), e não por
+  (`Features/RecordEntry`, `Features/GetEntry`, `Features/GetConsolidation`), e não por
   camadas técnicas com controllers. Com três endpoints no total, camadas espalhariam cada
   mudança de regra por três ou quatro pastas, sem ganho real de reaproveitamento.
 - **Entity Framework Core (EF Core) 10 com o driver Npgsql** para acessar o PostgreSQL. Cada

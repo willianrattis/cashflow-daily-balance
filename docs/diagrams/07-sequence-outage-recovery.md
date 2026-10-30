@@ -8,9 +8,9 @@ processa as mensagens acumuladas e os totais do dia se atualizam.
 sequenceDiagram
     autonumber
     actor Caller as Cliente
-    participant API as LaunchService (API)
-    participant LDB as Launch DB
-    participant Publisher as LaunchService (publisher do Outbox)
+    participant API as CashFlowEntryService (API)
+    participant LDB as Cash Flow Entry DB
+    participant Publisher as CashFlowEntryService (publisher do Outbox)
     participant Broker as RabbitMQ
     participant Worker as ConsolidationService (consumidor)
     participant CDB as Consolidation DB

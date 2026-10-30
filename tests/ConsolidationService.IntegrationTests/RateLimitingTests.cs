@@ -25,7 +25,7 @@ public class RateLimitingTests(ConsolidationServiceTestFixture fixture)
                 services.AddSingleton<ILoggerProvider>(logs);
                 var consumer = services.Single(descriptor =>
                     descriptor.ServiceType == typeof(IHostedService)
-                    && descriptor.ImplementationType == typeof(LaunchRecordedConsumerService));
+                    && descriptor.ImplementationType == typeof(CashFlowEntryRecordedConsumerService));
                 services.Remove(consumer);
             }));
         try

@@ -8,7 +8,7 @@
   "panels": [
     {
       "id": 1,
-      "title": "LaunchService",
+      "title": "CashFlowEntryService",
       "type": "row",
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
     },
@@ -17,11 +17,11 @@
       "title": "Request rate by outcome",
       "type": "timeseries",
       "datasource": "Prometheus",
-      "description": "Requisições por segundo ao POST /launches, separadas pelo resultado (outcome): success (201, ou 200 quando repete a mesma Idempotency-Key), validation (400, corpo ou cabeçalho inválido), conflict (409, mesma Idempotency-Key com conteúdo diferente), error (500, falha inesperada) e rate_limited (429, o chamador passou do limite de requisições por segundo, docs/05 §1). O smoke.sh padrão nunca provoca um 429.",
+      "description": "Requisições por segundo ao POST /entries, separadas pelo resultado (outcome): success (201, ou 200 quando repete a mesma Idempotency-Key), validation (400, corpo ou cabeçalho inválido), conflict (409, mesma Idempotency-Key com conteúdo diferente), error (500, falha inesperada) e rate_limited (429, o chamador passou do limite de requisições por segundo, docs/05 §1). O smoke.sh padrão nunca provoca um 429.",
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 1 },
       "fieldConfig": { "defaults": { "unit": "reqps" } },
       "targets": [
-        { "datasource": "Prometheus", "expr": "sum by (outcome) (rate(launch_requests_total[1m]))", "legendFormat": "{{outcome}}" }
+        { "datasource": "Prometheus", "expr": "sum by (outcome) (rate(cashflow_entry_requests_total[1m]))", "legendFormat": "{{outcome}}" }
       ]
     },
     {
@@ -29,25 +29,25 @@
       "title": "5xx rate",
       "type": "stat",
       "datasource": "Prometheus",
-      "description": "Requisições por segundo do LaunchService que terminaram em erro 500 (launch_requests_total{outcome=\"error\"}): falhas inesperadas, não erros de validação (400) nem de conflito (409). O smoke.sh padrão não provoca nenhuma, então o esperado é 0, a não ser que tenha ocorrido um erro 500 de verdade. Fica vermelho a partir de 0,1 por segundo; o alerta LaunchServiceErrors dispara se houver erros durante 5 minutos.",
+      "description": "Requisições por segundo do CashFlowEntryService que terminaram em erro 500 (cashflow_entry_requests_total{outcome=\"error\"}): falhas inesperadas, não erros de validação (400) nem de conflito (409). O smoke.sh padrão não provoca nenhuma, então o esperado é 0, a não ser que tenha ocorrido um erro 500 de verdade. Fica vermelho a partir de 0,1 por segundo; o alerta CashFlowEntryServiceErrors dispara se houver erros durante 5 minutos.",
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 1 },
       "fieldConfig": {
         "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 0.1 }] } }
       },
       "targets": [
-        { "datasource": "Prometheus", "expr": "sum(rate(launch_requests_total{outcome=\"error\"}[5m])) or vector(0)", "legendFormat": "5xx/s" }
+        { "datasource": "Prometheus", "expr": "sum(rate(cashflow_entry_requests_total{outcome=\"error\"}[5m])) or vector(0)", "legendFormat": "5xx/s" }
       ]
     },
     {
       "id": 4,
-      "title": "POST /launches p95 latency",
+      "title": "POST /entries p95 latency",
       "type": "timeseries",
       "datasource": "Prometheus",
-      "description": "Tempo de resposta do POST /launches abaixo do qual ficam 95% das requisições (p95), calculado sobre os últimos 5 minutos. No teste de carga a 50 requisições por segundo, fica perto de 6 ms. O alerta LaunchLatencyHigh dispara se passar de 300 ms durante 10 minutos.",
+      "description": "Tempo de resposta do POST /entries abaixo do qual ficam 95% das requisições (p95), calculado sobre os últimos 5 minutos. No teste de carga a 50 requisições por segundo, fica perto de 6 ms. O alerta CashFlowEntryLatencyHigh dispara se passar de 300 ms durante 10 minutos.",
       "gridPos": { "h": 8, "w": 8, "x": 16, "y": 1 },
       "fieldConfig": { "defaults": { "unit": "ms" } },
       "targets": [
-        { "datasource": "Prometheus", "expr": "histogram_quantile(0.95, sum by (le) (rate(launch_request_duration_ms_milliseconds_bucket[5m])))", "legendFormat": "p95" }
+        { "datasource": "Prometheus", "expr": "histogram_quantile(0.95, sum by (le) (rate(cashflow_entry_request_duration_ms_milliseconds_bucket[5m])))", "legendFormat": "p95" }
       ]
     },
     {
@@ -137,7 +137,7 @@
       "title": "Queue depth — main, retry.1-3, DLQ (messages ready)",
       "type": "timeseries",
       "datasource": "Prometheus",
-      "description": "Mensagens à espera (coluna Ready no RabbitMQ) em cada fila do Consolidado: a principal consolidation.launch-recorded.v1, as filas de espera retry.1 (5 s), retry.2 (30 s) e retry.3 (120 s) e a DLQ (Dead Letter Queue, mensagens que não puderam ser processadas). O normal é tudo em 0. A principal cresce quando o Consolidado está parado; as de espera, quando o processamento falha. Qualquer mensagem na DLQ dispara o alerta DeadLetterQueueNotEmpty.",
+      "description": "Mensagens à espera (coluna Ready no RabbitMQ) em cada fila do Consolidado: a principal consolidation.cashflow-entry-recorded.v1, as filas de espera retry.1 (5 s), retry.2 (30 s) e retry.3 (120 s) e a DLQ (Dead Letter Queue, mensagens que não puderam ser processadas). O normal é tudo em 0. A principal cresce quando o Consolidado está parado; as de espera, quando o processamento falha. Qualquer mensagem na DLQ dispara o alerta DeadLetterQueueNotEmpty.",
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 28 },
       "fieldConfig": { "defaults": { "unit": "short" } },
       "targets": [
@@ -196,10 +196,10 @@
     },
     {
       "id": 19,
-      "title": "LaunchService up",
+      "title": "CashFlowEntryService up",
       "type": "stat",
       "datasource": "Prometheus",
-      "description": "1 (verde) quando o Prometheus consegue coletar as métricas do LaunchService em /metrics; 0 (vermelho) quando não consegue, por exemplo com o container parado. A coleta é feita a cada 5 s. O alerta TargetDown dispara se ficar em 0 durante 1 minuto.",
+      "description": "1 (verde) quando o Prometheus consegue coletar as métricas do CashFlowEntryService em /metrics; 0 (vermelho) quando não consegue, por exemplo com o container parado. A coleta é feita a cada 5 s. O alerta TargetDown dispara se ficar em 0 durante 1 minuto.",
       "gridPos": { "h": 4, "w": 8, "x": 0, "y": 46 },
       "fieldConfig": {
         "defaults": {
@@ -209,7 +209,7 @@
           "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
         }
       },
-      "targets": [{ "datasource": "Prometheus", "expr": "up{job=\"launchservice\"}", "legendFormat": "up" }]
+      "targets": [{ "datasource": "Prometheus", "expr": "up{job=\"cashflowentryservice\"}", "legendFormat": "up" }]
     },
     {
       "id": 20,

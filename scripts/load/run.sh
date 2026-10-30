@@ -6,10 +6,10 @@
 # the compose stack, by service name — no local k6 install required.
 #
 # Usage:
-#   scripts/load/run.sh [consolidation|launches|all] [duration]
+#   scripts/load/run.sh [consolidation|entries|all] [duration]
 #     scenario   default: all
 #     duration   k6 duration string, default: 2m. A-013 calls for 15 minutes:
-#                  scripts/load/run.sh launches 15m
+#                  scripts/load/run.sh entries 15m
 #
 # Requires: the compose stack already up (`docker compose up -d`), curl, python3, docker.
 set -euo pipefail
@@ -23,8 +23,8 @@ DURATION="${2:-2m}"
 K6_IMAGE="grafana/k6:0.54.0"
 
 case "$SCENARIO" in
-  consolidation|launches|all) ;;
-  *) echo "Usage: $0 [consolidation|launches|all] [duration]" >&2; exit 2 ;;
+  consolidation|entries|all) ;;
+  *) echo "Usage: $0 [consolidation|entries|all] [duration]" >&2; exit 2 ;;
 esac
 
 PROMETHEUS_BASE="${PROMETHEUS_BASE:-http://localhost:9090}"
@@ -162,10 +162,10 @@ wait_for_outbox_and_queue_drained() {
   local timeout="${1:-180}" start elapsed pending queue_depth
   start=$(date +%s)
   while true; do
-    pending=$(docker compose exec -T postgres psql -U cashflow -d launch_db -t -A \
+    pending=$(docker compose exec -T postgres psql -U cashflow -d cashflow_entry_db -t -A \
       -c "SELECT count(*) FROM outbox_messages WHERE status <> 'Published';" 2>/dev/null | tr -d '[:space:]') || pending=""
     queue_depth=$(docker compose exec -T rabbitmq rabbitmqctl -q list_queues name messages 2>/dev/null \
-      | awk '$1 == "consolidation.launch-recorded.v1" {print $2}') || queue_depth=""
+      | awk '$1 == "consolidation.cashflow-entry-recorded.v1" {print $2}') || queue_depth=""
 
     if [ "$pending" = "0" ] && [ "$queue_depth" = "0" ]; then
       return 0
@@ -215,7 +215,7 @@ write_report() {
     if [ "$scenario" = "consolidation" ]; then
       echo "- Alvo: ConsolidationService \`GET /consolidation\`"
     else
-      echo "- Alvo: LaunchService \`POST /launches\`"
+      echo "- Alvo: CashFlowEntryService \`POST /entries\`"
     fi
     echo "- Taxa: 50 requisições por segundo, constantes (\`constant-arrival-rate\`: o k6 inicia 50"
     echo "  requisições a cada segundo, por mais que cada uma demore)"
@@ -236,7 +236,7 @@ write_report() {
     echo
     k6_threshold_lines "$summary_json"
     echo
-    if [ "$scenario" = "launches" ]; then
+    if [ "$scenario" = "entries" ]; then
       echo "## Depois do teste (só no cenário de lançamentos)"
       echo
       if [ "$drain_status" = "0" ]; then
@@ -299,22 +299,22 @@ run_consolidation() {
   write_report "consolidation" "$summary_json" "$k6_status"
 }
 
-run_launches() {
-  echo "== launches-50rps ($DURATION) =="
+run_entries() {
+  echo "== entries-50rps ($DURATION) =="
 
   local token network summary_json k6_status=0
-  token="$(python3 scripts/dev-jwt/make_token.py --scope cashflow.launches.write)"
+  token="$(python3 scripts/dev-jwt/make_token.py --scope cashflow.entries.write)"
   network="$(network_name)"
-  summary_json="$OUT_DIR/launches-summary.json"
+  summary_json="$OUT_DIR/entries-summary.json"
 
   docker run --rm \
     --network "$network" \
     -v "$REPO_ROOT/tests/load:/scripts:ro" \
     -v "$OUT_DIR:/out" \
-    -e BASE_URL="http://launchservice:8080" \
+    -e BASE_URL="http://cashflowentryservice:8080" \
     -e TOKEN="$token" \
     -e DURATION="$DURATION" \
-    "$K6_IMAGE" run --summary-export=/out/launches-summary.json /scripts/launches-50rps.js \
+    "$K6_IMAGE" run --summary-export=/out/entries-summary.json /scripts/entries-50rps.js \
     || k6_status=$?
 
   echo "Waiting for the Outbox and the main queue to drain..."
@@ -328,12 +328,12 @@ run_launches() {
   p95="$(prometheus_quantile 0.95 "$range")"
   p99="$(prometheus_quantile 0.99 "$range")"
 
-  write_report "launches" "$summary_json" "$k6_status" "$p95" "$p99" "$drain_status"
+  write_report "entries" "$summary_json" "$k6_status" "$p95" "$p99" "$drain_status"
 }
 
 if [ "$SCENARIO" = "consolidation" ] || [ "$SCENARIO" = "all" ]; then
   run_consolidation
 fi
-if [ "$SCENARIO" = "launches" ] || [ "$SCENARIO" = "all" ]; then
-  run_launches
+if [ "$SCENARIO" = "entries" ] || [ "$SCENARIO" = "all" ]; then
+  run_entries
 fi

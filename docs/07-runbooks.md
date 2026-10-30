@@ -10,7 +10,7 @@ Os comandos valem para o ambiente local (`docker compose`) e rodam a partir da r
 repositório. Em produção, troque `docker compose exec`, `stop` e `start` pelo equivalente do
 ambiente (`kubectl`, o console do banco ou do broker gerenciado); o diagnóstico e a verificação
 continuam os mesmos. Os dois bancos aparecem pelos nomes dos diagramas — DB (database) quer dizer
-banco de dados: `Launch DB` é o banco de Lançamentos, e `Consolidation DB`, o do Consolidado.
+banco de dados: `Cash Flow Entry DB` é o banco de Lançamentos, e `Consolidation DB`, o do Consolidado.
 
 **Alertas.** Os alertas citados aparecem em http://localhost:9090/alerts; o que cada um mede está
 em [`docs/05-aspectos-transversais.md` §3](05-aspectos-transversais.md#alertas). Nesta entrega,
@@ -26,9 +26,9 @@ fora do caminho das requisições.
 
 | Script | O que faz | Quando usar |
 |---|---|---|
-| `scripts/ops/reconcile.sh` | Compara, dia a dia (`business_date`), a soma dos lançamentos (`launch_db.launches`) com os totais do Consolidado (`consolidation_db.daily_consolidations`). Sai com código `1` se algum dia não bater. | Para conferir os totais, sempre que houver dúvida, e no fim dos outros procedimentos. |
+| `scripts/ops/reconcile.sh` | Compara, dia a dia (`business_date`), a soma dos lançamentos (`cashflow_entry_db.cash_flow_entries`) com os totais do Consolidado (`consolidation_db.daily_consolidations`). Sai com código `1` se algum dia não bater. | Para conferir os totais, sempre que houver dúvida, e no fim dos outros procedimentos. |
 | `scripts/ops/replay-dlq.sh [timeout]` | Devolve à fila principal as mensagens que estão na DLQ (Dead Letter Queue, fila das mensagens que não puderam ser processadas). Usa um shovel dinâmico, recurso do RabbitMQ que move mensagens de uma fila para outra. | Depois de corrigida a causa da falha (§4). |
-| `scripts/ops/rebuild-consolidation.sh [--yes]` | Apaga e recalcula do zero os totais do Consolidado, a partir das mensagens guardadas no Outbox de Lançamentos — a tabela `outbox_messages`, com uma mensagem por lançamento. A tabela `launches` nunca é alterada. | Quando os totais divergem e reenviar a DLQ não resolve (§5). |
+| `scripts/ops/rebuild-consolidation.sh [--yes]` | Apaga e recalcula do zero os totais do Consolidado, a partir das mensagens guardadas no Outbox de Lançamentos — a tabela `outbox_messages`, com uma mensagem por lançamento. A tabela `cash_flow_entries` nunca é alterada. | Quando os totais divergem e reenviar a DLQ não resolve (§5). |
 
 Para apagar todos os dados de teste — dos dois bancos, do RabbitMQ, do Prometheus e do Grafana —,
 use `docker compose down -v`. Nunca em produção: o comando apaga os volumes inteiros, e não só as
@@ -39,7 +39,7 @@ linhas de teste.
 **Quando usar.** Quando o RabbitMQ para de responder e o publisher do Outbox — a tarefa de
 Lançamentos que envia as mensagens ao broker — não consegue publicar.
 
-**Sintoma.** No `LaunchService`, `broker_publish_failures_total{reason="connection"}` sobe e
+**Sintoma.** No `CashFlowEntryService`, `broker_publish_failures_total{reason="connection"}` sobe e
 `outbox_pending_count` e `outbox_oldest_age_seconds` crescem; o painel "RabbitMQ up" fica vermelho;
 `/health/broker` dos dois serviços responde `Degraded`.
 
@@ -70,7 +70,7 @@ tempo que for preciso (ADR-003, decisão sobre o Outbox).
 **Verificação.**
 ```bash
 curl -s http://localhost:5101/health/broker; echo    # Healthy
-docker compose exec postgres psql -U cashflow -d launch_db \
+docker compose exec postgres psql -U cashflow -d cashflow_entry_db \
   -c "SELECT status, attempt_count FROM outbox_messages ORDER BY created_at_utc DESC LIMIT 5;"
   # status volta a Published
 ./scripts/ops/reconcile.sh                            # PASS depois que o backlog esvaziar
@@ -88,7 +88,7 @@ se acumulam na fila (backlog).
 
 **Sintoma.** `/health/ready` do `ConsolidationService` falha, ou o processo está parado. O painel
 "Queue depth — main, retry.1-3, DLQ (messages ready)" mostra a fila principal
-(`consolidation.launch-recorded.v1`) crescendo sem consumidor. `consumer_lag_seconds` para de
+(`consolidation.cashflow-entry-recorded.v1`) crescendo sem consumidor. `consumer_lag_seconds` para de
 receber pontos novos.
 
 **Impacto.** Os lançamentos continuam sendo aceitos (NFR-001). O Consolidado fica desatualizado:
@@ -172,10 +172,10 @@ lançamentos na consulta em até 5 s — por 5 minutos) e
 `DeadLetterQueueNotEmpty` disparado.
 
 **Sintoma.** `dlq_messages_total` aumenta; o painel "Queue depth — main, retry.1-3, DLQ (messages
-ready)" mostra mensagens em `consolidation.launch-recorded.v1.dlq`;
+ready)" mostra mensagens em `consolidation.cashflow-entry-recorded.v1.dlq`;
 `consumer_events_total{outcome="rejected"}` ou `{outcome="dead_lettered"}` sobe.
 
-**Impacto.** O lançamento original não se perde: ele está em `launches`, que nunca muda. Os eventos
+**Impacto.** O lançamento original não se perde: ele está em `cash_flow_entries`, que nunca muda. Os eventos
 que estão na DLQ não foram somados aos totais: o Consolidado fica incompleto para esses
 lançamentos até alguém agir.
 
@@ -183,7 +183,7 @@ lançamentos até alguém agir.
 1. Ver a causa antes de reenviar — nem toda mensagem na DLQ deve voltar sem investigação:
    ```bash
    curl -s -u cashflow:cashflow-dev-only -X POST \
-     http://localhost:15672/api/queues/%2F/consolidation.launch-recorded.v1.dlq/get \
+     http://localhost:15672/api/queues/%2F/consolidation.cashflow-entry-recorded.v1.dlq/get \
      -H "Content-Type: application/json" \
      -d '{"count":10,"ackmode":"ack_requeue_true","encoding":"auto"}' | python3 -m json.tool
    ```
@@ -215,11 +215,11 @@ investigar.
 **Quando usar.** Quando os totais do Consolidado não batem com a soma dos lançamentos:
 `scripts/ops/reconcile.sh` sai com código `1`.
 
-**Sintoma.** O `reconcile.sh` lista os dias (`business_date`) em que `launch_db.launches` e
+**Sintoma.** O `reconcile.sh` lista os dias (`business_date`) em que `cashflow_entry_db.cash_flow_entries` e
 `consolidation_db.daily_consolidations` divergem.
 
 **Impacto.** Para esses dias, o Consolidado não mostra o que os lançamentos dizem. A tabela
-`launches` nunca é afetada, e a divergência sempre pode ser corrigida recalculando os totais
+`cash_flow_entries` nunca é afetada, e a divergência sempre pode ser corrigida recalculando os totais
 (NFR-009, requisito: os totais podem ser recuperados; A-005, premissa: os lançamentos são a fonte
 da verdade).
 
@@ -266,17 +266,17 @@ Silencie o alerta, ou anote a janela da reconstrução, em vez de tratá-lo como
 **Risco que resta.** A reconstrução depende de as mensagens publicadas continuarem no Outbox; não
 há tarefa que as apague (A-012, premissa: as mensagens do Outbox ficam guardadas sem prazo). Se
 um lançamento muito antigo perdesse a linha do Outbox por um motivo fora do previsto, este
-mecanismo não o republicaria; seria preciso ler direto de `launches`, uma evolução não
+mecanismo não o republicaria; seria preciso ler direto de `cash_flow_entries`, uma evolução não
 implementada. Durante a reconstrução, o Consolidado fica fora do ar: é uma operação manual, e não
 uma degradação invisível ao usuário.
 
-## 6. Launch DB fora do ar
+## 6. Cash Flow Entry DB fora do ar
 
-**Quando usar.** Quando o banco de Lançamentos (`Launch DB`) cai e o registro de lançamentos
+**Quando usar.** Quando o banco de Lançamentos (`Cash Flow Entry DB`) cai e o registro de lançamentos
 falha.
 
-**Sintoma.** `/health/ready` do `LaunchService` responde `Unhealthy`; registrar e consultar
-lançamentos falha. `LaunchService` depende do próprio banco para tudo, por desenho: não há
+**Sintoma.** `/health/ready` do `CashFlowEntryService` responde `Unhealthy`; registrar e consultar
+lançamentos falha. `CashFlowEntryService` depende do próprio banco para tudo, por desenho: não há
 alternativa.
 
 **Impacto.** Sem o banco, Lançamentos não tem onde registrar. Ao contrário do Consolidado
@@ -313,7 +313,7 @@ produção, com a cópia síncrona em outra zona, está em `docs/diagrams/svg/De
 ## 7. Erros ou lentidão das APIs acima da meta
 
 **Quando usar.** Quando dispara um alerta de erro ou de lentidão das APIs:
-`ConsolidationServiceErrors`, `LaunchLatencyHigh` ou `ConsolidationLatencyHigh`.
+`ConsolidationServiceErrors`, `CashFlowEntryLatencyHigh` ou `ConsolidationLatencyHigh`.
 
 **Sintoma.** Um desses alertas aparece em http://localhost:9090/alerts; os painéis "5xx rate" ou
 de latência p95 do Grafana ficam fora da meta.
@@ -323,7 +323,7 @@ que a API está mais lenta ou falhando mais, e não de dado perdido. `Consolidat
 mede, no Consolidado, a "perda de requisições" do NFR-C (requisito do PDF: no máximo 5% de perda
 de requisições), lida como em A-004 (premissa: perda é requisição que falha, e não dado perdido):
 mais de 5% das consultas com erro em 5 minutos. O alerta usa uma proporção, e não uma contagem,
-porque o limite aceito é uma porcentagem, e não zero. `LaunchLatencyHigh` e
+porque o limite aceito é uma porcentagem, e não zero. `CashFlowEntryLatencyHigh` e
 `ConsolidationLatencyHigh` medem as metas de tempo de resposta do NFR-013 (p95 acima de 300 ms e
 de 500 ms por 10 minutos).
 
@@ -332,7 +332,7 @@ de 500 ms por 10 minutos).
    o código:
    ```bash
    docker compose stats --no-stream
-   docker compose logs --tail=100 launchservice consolidationservice | grep -i error
+   docker compose logs --tail=100 cashflowentryservice consolidationservice | grep -i error
    ```
 2. Confirmar que os erros são do tipo `outcome="error"` (resposta `5xx` ou exceção), e não de
    validação ou conflito de negócio (`4xx`): o alerta mede só o primeiro. O painel "5xx rate" do
@@ -343,7 +343,7 @@ de 500 ms por 10 minutos).
 
 **Verificação.**
 ```bash
-curl -s 'http://localhost:9090/api/v1/query?query=histogram_quantile(0.95,sum(rate(launch_request_duration_ms_milliseconds_bucket%5B5m%5D))by(le))'
+curl -s 'http://localhost:9090/api/v1/query?query=histogram_quantile(0.95,sum(rate(cashflow_entry_request_duration_ms_milliseconds_bucket%5B5m%5D))by(le))'
 curl -s 'http://localhost:9090/api/v1/query?query=histogram_quantile(0.95,sum(rate(consolidation_query_duration_ms_milliseconds_bucket%5B5m%5D))by(le))'
 ```
 
@@ -356,7 +356,7 @@ curl -s 'http://localhost:9090/api/v1/query?query=histogram_quantile(0.95,sum(ra
 e 120 s) num broker que já tem as filas criadas.
 
 **Sintoma, se a mudança for feita só reiniciando o serviço.** Cada fila de espera
-(`consolidation.launch-recorded.v1.retry.1`, `.2` e `.3`) é criada com um TTL (Time To Live, tempo
+(`consolidation.cashflow-entry-recorded.v1.retry.1`, `.2` e `.3`) é criada com um TTL (Time To Live, tempo
 de vida da mensagem na fila) fixo, o argumento `x-message-ttl`. O RabbitMQ recusa criar de novo uma
 fila que já existe com outro valor. O consumidor não consegue começar a consumir e tenta de novo a
 cada 5 s, para sempre. O log mostra:
@@ -364,7 +364,7 @@ cada 5 s, para sempre. O log mostra:
 ```text
 Falha ao conectar/consumir do RabbitMQ; nova tentativa em 5s.
 RabbitMQ.Client.Exceptions.OperationInterruptedException: ... code=406, text='PRECONDITION_FAILED -
-inequivalent arg 'x-message-ttl' for queue 'consolidation.launch-recorded.v1.retry.1' in vhost '/':
+inequivalent arg 'x-message-ttl' for queue 'consolidation.cashflow-entry-recorded.v1.retry.1' in vhost '/':
 received '10000' but current is '5000''
 ```
 
@@ -389,7 +389,7 @@ não derruba Lançamentos). O Consolidado para de receber eventos até o procedi
 3. Apagar as três filas de espera. A fila principal e a DLQ não mudam:
    ```bash
    for n in 1 2 3; do
-     docker compose exec -T rabbitmq rabbitmqctl -q delete_queue "consolidation.launch-recorded.v1.retry.$n"
+     docker compose exec -T rabbitmq rabbitmqctl -q delete_queue "consolidation.cashflow-entry-recorded.v1.retry.$n"
    done
    ```
    Cada comando deve responder `Queue was successfully deleted with 0 ready messages`.
@@ -402,7 +402,7 @@ não derruba Lançamentos). O Consolidado para de receber eventos até o procedi
 **Verificação.**
 ```bash
 docker compose exec -T rabbitmq rabbitmqctl -q list_queues name arguments | grep 'retry\.'   # x-message-ttl com os novos valores
-docker compose exec -T rabbitmq rabbitmqctl -q list_consumers queue_name                     # um consumidor em consolidation.launch-recorded.v1
+docker compose exec -T rabbitmq rabbitmqctl -q list_consumers queue_name                     # um consumidor em consolidation.cashflow-entry-recorded.v1
 docker compose logs --since 1m consolidationservice | grep -c 'Falha ao conectar'           # 0
 ```
 

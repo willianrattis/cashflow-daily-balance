@@ -1,6 +1,6 @@
 namespace ConsolidationService.Infrastructure.Observability;
 
-/// <summary>Readiness depends only on this service's own database, never on the broker or LaunchService.</summary>
+/// <summary>Readiness depends only on this service's own database, never on the broker or CashFlowEntryService.</summary>
 public sealed class DatabaseHealthCheck(string connectionString) : IHealthCheck
 {
     public async Task<HealthCheckResult> CheckHealthAsync(
